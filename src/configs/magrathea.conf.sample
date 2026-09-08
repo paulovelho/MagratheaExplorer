@@ -1,0 +1,25 @@
+[general]
+	use_environment = "dev"
+	time_zone = "America/Sao_Paulo"
+
+[dev]
+	db_host = "mag_sql"
+	db_name = "magrathea_explorer"
+	db_user = "user"
+	db_pass = "password"
+	logs_path = "/var/www/logs"
+	cache_path = "/var/www/cache"
+	timezone = "America/Sao_Paulo"
+	app_url = "http://explorer.magrathea.localhost.com:8080"
+	jwt_key = ""
+
+[production]
+	db_host = "127.0.0.1"
+	db_name = "db_name"
+	db_user = "db_user"
+	db_pass = "password123"
+	logs_path = ""
+	cache_path = "/var/www/cache"
+	timezone = "America/Sao_Paulo"
+	app_url = "https://explorer.platypusweb.com"
+	jwt_key = ""

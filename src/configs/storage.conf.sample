@@ -1,0 +1,33 @@
+; `driver` picks exactly one backend, instance-wide: "local" or "s3".
+; "s3" covers both Cloudflare R2 and real AWS S3 -- R2 is just S3 with a
+; Cloudflare endpoint and region "auto"; nothing else changes.
+
+[dev]
+	driver = "local"
+
+	; used when driver = "local"
+	local_path = "/var/www/storage"
+	local_url = "http://explorer.magrathea.localhost.com:8080/storage"
+
+	; used when driver = "s3" (R2: endpoint = https://<account_id>.r2.cloudflarestorage.com, region = "auto")
+	s3_endpoint = ""
+	s3_region = "auto"
+	s3_bucket = ""
+	s3_access_key = ""
+	s3_secret_key = ""
+	s3_path_style = true
+	; public base URL files are served from (bucket public URL, or a custom domain in front of it)
+	s3_public_url = ""
+
+[production]
+	driver = "local"
+	local_path = "/var/www/storage"
+	local_url = "https://explorer.platypusweb.com/storage"
+
+	s3_endpoint = ""
+	s3_region = "auto"
+	s3_bucket = ""
+	s3_access_key = ""
+	s3_secret_key = ""
+	s3_path_style = true
+	s3_public_url = ""

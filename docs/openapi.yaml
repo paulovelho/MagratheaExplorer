@@ -1,0 +1,217 @@
+openapi: 3.0.3
+info:
+  title: Magrathea Explorer
+  description: >
+    Self-hosted file hosting API (images/audio/video/documents/other), obfuscated URLs,
+    pluggable local/S3/R2 storage. Every authenticated route takes `Authorization: Bearer <key-uuid>`.
+  version: "1.0.0"
+servers:
+  - url: /api
+
+components:
+  securitySchemes:
+    bearerKey:
+      type: http
+      scheme: bearer
+      description: The key's UUID, provisioned by an operator via the admin panel (there is no public key-creation endpoint).
+  schemas:
+    Key:
+      type: object
+      properties:
+        name: { type: string }
+        uses: { type: integer }
+        usage_limit: { type: integer, nullable: true }
+        total_size: { type: integer, description: bytes currently stored }
+        usage_limit_mb: { type: integer, nullable: true }
+        expiration: { type: string, format: date-time, nullable: true }
+        active: { type: boolean }
+        created_at: { type: string, format: date-time }
+    Folder:
+      type: object
+      properties:
+        id: { type: integer }
+        parent_id: { type: integer, nullable: true }
+        name: { type: string }
+        is_root: { type: boolean }
+        created_at: { type: string, format: date-time }
+    File:
+      type: object
+      properties:
+        id: { type: integer }
+        folder_id: { type: integer }
+        name: { type: string }
+        extension: { type: string }
+        mime_type: { type: string }
+        file_type: { type: string, enum: [image, audio, video, document, other] }
+        size: { type: integer }
+        width: { type: integer, nullable: true }
+        height: { type: integer, nullable: true }
+        duration: { type: integer, nullable: true, description: seconds, audio/video only }
+        no_convert: { type: boolean }
+        url: { type: string }
+        thumbnail_url: { type: string, nullable: true }
+        tags: { type: array, items: { type: string } }
+        created_at: { type: string, format: date-time }
+    Error:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        data:
+          type: object
+          properties:
+            code: { type: integer }
+            message: { type: string }
+
+security:
+  - bearerKey: []
+
+paths:
+  /version:
+    get:
+      summary: API/framework version info
+      security: []
+      responses: { "200": { description: OK } }
+
+  /settings:
+    get:
+      summary: Public runtime settings (max upload size, thumbnail size)
+      security: []
+      responses: { "200": { description: OK } }
+
+  /changelog:
+    get:
+      summary: Last 5 changelog entries
+      security: []
+      responses: { "200": { description: OK } }
+
+  /error-codes:
+    get:
+      summary: Full error code -> message map
+      security: []
+      responses: { "200": { description: OK } }
+
+  /key:
+    get:
+      summary: The caller's own key (self-service view, uuid never echoed back)
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Key" } } } }
+        "401": { description: Missing/invalid bearer token, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    delete:
+      summary: Schedules the key for deletion in 14 days (does not delete anything immediately)
+      responses: { "200": { description: Scheduled } }
+
+  /key/usage:
+    get:
+      summary: uses/usage_limit/total_size/usage_limit_mb only
+      responses: { "200": { description: OK } }
+
+  /key/cancel-deletion:
+    post:
+      summary: Cancels a pending scheduled deletion
+      responses:
+        "200": { description: Cancelled }
+        "404": { description: No pending deletion to cancel }
+
+  /folders:
+    get:
+      summary: List folders for the key, or the direct children of ?parent_id=
+      parameters:
+        - { name: parent_id, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Folder" } } } }
+    post:
+      summary: Create a folder
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                parent_id: { type: integer, description: "defaults to the key's root folder" }
+              required: [name]
+      responses: { "200": { description: Created } }
+
+  /folder/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+    get:
+      summary: Get one folder
+      responses:
+        "200": { description: OK }
+        "404": { description: Not found (or belongs to another key) }
+    put:
+      summary: Rename a folder
+      responses: { "200": { description: OK } }
+    delete:
+      summary: Delete an empty, non-root folder
+      responses:
+        "200": { description: Deleted }
+        "400": { description: Folder not empty, or is a root folder }
+
+  /folder/{id}/size:
+    get:
+      summary: Recursive subtree byte total
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses: { "200": { description: OK } }
+
+  /files:
+    get:
+      summary: List files for the key
+      parameters:
+        - { name: folder_id, in: query, schema: { type: integer } }
+        - { name: file_type, in: query, schema: { type: string, enum: [image, audio, video, document, other] } }
+        - { name: tag, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/File" } } } }
+    post:
+      summary: Upload a file (multipart/form-data)
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+                folder_id: { type: integer, description: "defaults to the key's root folder" }
+                no_convert: { type: boolean, description: "images only: skip webp conversion (metadata is always stripped regardless)" }
+                tags: { type: string, description: comma-separated tag names }
+              required: [file]
+      responses:
+        "200": { description: Uploaded, content: { application/json: { schema: { $ref: "#/components/schemas/File" } } } }
+        "413": { description: File too large }
+        "415": { description: Unsupported or dangerous file type }
+        "403": { description: Upload count or storage size limit reached }
+
+  /file/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+    get:
+      summary: Get one file
+      responses: { "200": { description: OK }, "404": { description: Not found } }
+    put:
+      summary: Rename a file's display name
+      responses: { "200": { description: OK } }
+    delete:
+      summary: Delete a file from storage and the database
+      responses: { "200": { description: Deleted } }
+
+  /file/{id}/tags:
+    post:
+      summary: Attach a tag (created if it doesn't exist)
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema: { type: object, properties: { name: { type: string } }, required: [name] }
+      responses: { "200": { description: OK } }
+
+  /file/{id}/tags/{tag}:
+    delete:
+      summary: Detach a tag by name
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: tag, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: OK } }
