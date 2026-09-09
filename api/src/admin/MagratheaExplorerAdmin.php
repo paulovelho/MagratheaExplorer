@@ -38,6 +38,7 @@ class MagratheaExplorerAdmin extends Admin implements \Magrathea2\Admin\iAdmin {
 		$this->features["key"] = new KeyAdmin();
 		$this->features["scheduled-deletion"] = new ScheduledDeletionAdmin();
 		$this->features["browser"] = new BrowserAdmin();
+		$this->features["storage"] = new StorageAdmin();
 		$this->AddFeaturesArray($this->features);
 	}
 
@@ -47,6 +48,7 @@ class MagratheaExplorerAdmin extends Admin implements \Magrathea2\Admin\iAdmin {
 			->Add($this->features["browser"]->GetMenuItem())
 			->Add($this->features["key"]->GetMenuItem())
 			->Add($this->features["scheduled-deletion"]->GetMenuItem())
+			->Add($this->features["storage"]->GetMenuItem())
 
 			->Add($menu->CreateTitle("Api"))
 			->Add($this->features["api"]->GetMenuItem())
