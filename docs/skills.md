@@ -3,6 +3,11 @@
 This document teaches AI agents how to correctly interact with the MagratheaExplorer API.
 The full machine-readable contract is in `docs/openapi.yaml`.
 
+All routes below are relative to the API base path `/api/v1` (e.g. `GET /version` means
+`GET https://your-host/api/v1/version`) — see `docs/openapi.yaml`'s `servers.url`. The
+separate PHP admin panel (`/admin.php`) and the new Angular/Vue admin app (`/app`, not
+built yet) live outside this prefix.
+
 ---
 
 ## Mental model

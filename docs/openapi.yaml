@@ -6,7 +6,7 @@ info:
     pluggable local/S3/R2 storage. Every authenticated route takes `Authorization: Bearer <key-uuid>`.
   version: "1.0.0"
 servers:
-  - url: /api
+  - url: /api/v1
 
 components:
   securitySchemes:

@@ -1,0 +1,66 @@
+# Caddy equivalent of docker/apache/site-dev.conf + src/api/.htaccess.
+# Not wired into docker-compose.yml (that still builds the Apache image for
+# dev) -- this is a reference config for a Caddy-fronted instance (see
+# plan.md §11: "bare Apache/Caddy in prod").
+#
+# If this domain also serves other, unrelated tools/paths outside this repo,
+# fold these `handle`/`handle_path` blocks into that shared site address
+# block instead of running this as its own -- Caddy won't let two site
+# blocks both claim the same hostname.
+#
+# php_fastcgi's upstream below is a placeholder -- point it at your actual
+# php-fpm listener (unix socket or host:port).
+
+platypusweb.com.br {
+	root * /var/www/html/api
+
+	# .user.ini is Apache/php.ini-specific config -- never serve it (parity
+	# with the <Files ".user.ini"> deny block in src/api/.htaccess). Caddy's
+	# file_server never lists directories by default, so no Options -Indexes
+	# equivalent is needed.
+	@userini path *.user.ini
+	respond @userini 403
+
+	# Only requests under /api/v1/... reach the JSON API router; everything
+	# else (admin.php, error-manager assets, etc.) falls through to the
+	# default handle below and is served/executed as a normal file.
+	# Bump this prefix (v1 -> v2) the day the route table needs a breaking
+	# change -- mirrors the same comment in src/api/.htaccess.
+	@apiv1 path_regexp apiv1 ^/api/v1/(.*)$
+	handle @apiv1 {
+		# index.php reads magrathea_control/action/params from $_GET and just
+		# rejoins them with "/" before re-splitting on "/" -- unlike the
+		# .htaccess version (which mod_rewrite forced into three separate
+		# 1/2/3-segment rules), there's no need to split the captured path
+		# across control/action/params here: dumping it all into
+		# magrathea_control and leaving action/params unset reconstructs the
+		# exact same segment list once index.php explodes and array_filters
+		# it. {http.request.uri.query} preserves real GET filters
+		# (?folder_id=5 etc.), same job as .htaccess's %{QUERY_STRING}/%1.
+		rewrite * /index.php?magrathea_control={re.apiv1.1}&{http.request.uri.query}
+		php_fastcgi 127.0.0.1:9000
+	}
+
+	# storage.conf's local_path lives outside src/api's docroot -- route it
+	# here so local_url (.../storage) resolves. Not needed for s3/R2 drivers.
+	handle_path /storage/* {
+		root * /var/www/storage
+		file_server
+	}
+
+	# New Angular/Vue admin app lives outside src/api's docroot too -- served
+	# at /app, sibling to the versioned JSON API at /api/v1. Placeholder
+	# until the real SPA build lands here.
+	handle_path /app/* {
+		root * /var/www/html/app
+		file_server
+	}
+
+	# Default: anything not matched above (admin.php, direct .php class
+	# files, static assets) is executed/served straight from src/api, same
+	# as Apache's `RewriteCond %{REQUEST_FILENAME} -f` passthrough.
+	handle {
+		php_fastcgi 127.0.0.1:9000
+		file_server
+	}
+}

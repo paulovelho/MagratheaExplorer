@@ -44,9 +44,11 @@ class MagratheaExplorerApi extends MagratheaApi {
 		$this->BaseAuthorization($authApi, self::AUTHENTICATED);
 	}
 
+	const API_PREFIX = "api/v1";
+
 	private function SetUrl() {
 		$url = Config::Instance()->Get("app_url");
-		$this->SetAddress($url);
+		$this->SetAddress($url."/".self::API_PREFIX);
 	}
 
 	private function AddKey() {

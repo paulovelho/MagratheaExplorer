@@ -67,14 +67,21 @@ for the machine-readable route contract.
 
    Both files are gitignored — never commit real credentials.
 
-4. **Web server**: point your vhost's document root at `src/api/`. `.htaccess` handles
-   the URL rewriting for Apache; for local dev, PHP's built-in server works too (routes
-   have to be hit via the raw `magrathea_control`/`magrathea_action`/`magrathea_params`
-   GET params instead of pretty URLs, since `php -S` doesn't process `.htaccess`).
+4. **Web server**: point your vhost's document root at `src/api/`. The JSON API only
+   answers under `/api/v1/...` — `src/api/.htaccess` requires that prefix on every
+   route, so `GET /api/v1/version` works but bare `GET /version` 404s. `/admin.php`
+   (and any other real file directly under `src/api/`) stays reachable unprefixed,
+   since it's served directly rather than routed. For local dev, PHP's built-in server
+   works too (routes have to be hit via the raw
+   `magrathea_control`/`magrathea_action`/`magrathea_params` GET params instead of
+   pretty URLs, since `php -S` doesn't process `.htaccess`; the params themselves are
+   unprefixed — no `api/v1`).
 
-   For a local-storage deployment, the storage folder needs to be reachable at the URL
-   configured in `storage.conf`'s `local_url` — outside `src/api/`'s own docroot if
-   you're running a single vhost, so route or symlink it accordingly.
+   Two more paths need routing outside `src/api/`'s docroot, both via vhost `Alias`
+   (see `docker/apache/site-dev.conf` for the dev version of both):
+   - `/app` → `src/app/` — the Angular/Vue admin app (not built yet, see `src/app/README.md`).
+   - `/storage` → `storage.conf`'s `local_path`, so `local_url` resolves. Only needed
+     for the `local` storage driver, not s3/R2.
 
 5. **First admin user**: visit `/admin.php` in a browser — with no admin users yet, it
    shows a first-run setup form to create one. This is the *only* way to create a key;
@@ -94,8 +101,9 @@ docs/openapi.yaml, docs/skills.md          -> API contract + AI-agent guide
 src/
   version, changelog.md                   -> kept in sync on every version bump (see claude.md)
   configs/                                -> magrathea.conf, storage.conf, magrathea_objects.conf
-  api/
-    _inc.php, index.php, admin.php,       -> entry points
+  app/                                    -> Angular/Vue admin app, served at /app (not built yet)
+  api/                                    -> JSON API, served at /api/v1 (.htaccess enforces the prefix)
+    _inc.php, index.php, admin.php,       -> entry points (admin.php stays unprefixed, e.g. /admin.php)
     api.php, cron.php
     error-manager/                        -> ErrorCodes + error_codes.conf
     shared/                               -> ExplorerApiControl (bearer-key resolution), SystemApi
@@ -111,22 +119,22 @@ src/
 
 ```
 # Get a key's own info and usage
-curl -H "Authorization: Bearer <key-uuid>" https://your-host/key
-curl -H "Authorization: Bearer <key-uuid>" https://your-host/key/usage
+curl -H "Authorization: Bearer <key-uuid>" https://your-host/api/v1/key
+curl -H "Authorization: Bearer <key-uuid>" https://your-host/api/v1/key/usage
 
 # Upload a file
 curl -X POST -H "Authorization: Bearer <key-uuid>" \
   -F "file=@photo.jpg" -F "tags=vacation,summer" \
-  https://your-host/files
+  https://your-host/api/v1/files
 
 # List files in a folder, or by type/tag
-curl -H "Authorization: Bearer <key-uuid>" "https://your-host/files?folder_id=5"
-curl -H "Authorization: Bearer <key-uuid>" "https://your-host/files?file_type=audio"
-curl -H "Authorization: Bearer <key-uuid>" "https://your-host/files?tag=logo"
+curl -H "Authorization: Bearer <key-uuid>" "https://your-host/api/v1/files?folder_id=5"
+curl -H "Authorization: Bearer <key-uuid>" "https://your-host/api/v1/files?file_type=audio"
+curl -H "Authorization: Bearer <key-uuid>" "https://your-host/api/v1/files?tag=logo"
 ```
 
 Full route list, request/response shapes, and error codes: `docs/openapi.yaml` and
-`GET /error-codes`.
+`GET /api/v1/error-codes`.
 
 ## Versioning
 

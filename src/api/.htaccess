@@ -16,16 +16,19 @@ Options -Indexes
 	RewriteCond %{REQUEST_FILENAME} -f
 	RewriteRule .+ - [L]
 
+  # Only requests under /api/v1/... reach the JSON API router; everything else
+  # (admin.php, error-manager assets, etc.) is served/denied as a normal file.
+  # Bump this prefix (v1 -> v2) the day the route table needs a breaking change.
   #Respect this rules for redirecting:
   RewriteCond %{QUERY_STRING} ^(.+)$
-  RewriteRule ^([a-zA-Z0-9_-]+)/([a-zA-Z0-9_-]+)/(.*)$ index.php?magrathea_control=$1&magrathea_action=$2&magrathea_params=$3&%1 [L]
-  RewriteRule ^([a-zA-Z0-9_-]+)/([a-zA-Z0-9_-]+)/(.*)$ index.php?magrathea_control=$1&magrathea_action=$2&magrathea_params=$3 [L]
+  RewriteRule ^api/v1/([a-zA-Z0-9_-]+)/([a-zA-Z0-9_-]+)/(.*)$ index.php?magrathea_control=$1&magrathea_action=$2&magrathea_params=$3&%1 [L]
+  RewriteRule ^api/v1/([a-zA-Z0-9_-]+)/([a-zA-Z0-9_-]+)/(.*)$ index.php?magrathea_control=$1&magrathea_action=$2&magrathea_params=$3 [L]
   RewriteCond %{QUERY_STRING} ^(.+)$
-  RewriteRule ^([a-zA-Z0-9_-]+)/(.*)$ index.php?magrathea_control=$1&magrathea_action=$2&%1 [L]
-  RewriteRule ^([a-zA-Z0-9_-]+)/(.*)$ index.php?magrathea_control=$1&magrathea_action=$2 [L]
+  RewriteRule ^api/v1/([a-zA-Z0-9_-]+)/(.*)$ index.php?magrathea_control=$1&magrathea_action=$2&%1 [L]
+  RewriteRule ^api/v1/([a-zA-Z0-9_-]+)/(.*)$ index.php?magrathea_control=$1&magrathea_action=$2 [L]
   RewriteCond %{QUERY_STRING} ^(.+)$
-  RewriteRule ^(.*)$ index.php?magrathea_control=$1&%1 [L]
-  RewriteRule ^(.*)$ index.php?magrathea_control=$1 [L]
+  RewriteRule ^api/v1/(.*)$ index.php?magrathea_control=$1&%1 [L]
+  RewriteRule ^api/v1/(.*)$ index.php?magrathea_control=$1 [L]
   SetEnvIf Authorization .+ HTTP_AUTHORIZATION=$0
 
 </IfModule>
