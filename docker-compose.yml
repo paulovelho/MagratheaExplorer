@@ -22,7 +22,7 @@ services:
       dockerfile: ./docker/Dockerfile
     volumes:
       - ./api:/var/www/html
-      - ./app/dist:/var/www/html/app
+      - ./dist:/var/www/html/app
       - ./api/logs:/var/www/logs
       - ./api/cache:/var/www/cache
       - ./api/storage:/var/www/storage

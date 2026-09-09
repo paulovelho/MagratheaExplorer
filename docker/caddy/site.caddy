@@ -58,10 +58,11 @@ platypusweb.com.br {
 
 	# Admin app (Vue 3 + Vite) lives in the separate app/ project at the repo
 	# root -- served at /app, sibling to the versioned JSON API at /api/v1.
-	# Points at app/dist (Vite's build output), not app/src. try_files falls
-	# back to index.html for any path that isn't a real file (vue-router
-	# uses history mode, so a direct load/refresh of e.g. /app/folder/42 has
-	# no matching file here) and lets the router take over client-side.
+	# Points at the repo-root dist/ (Vite's build output, committed to git),
+	# not app/src. try_files falls back to index.html for any path that
+	# isn't a real file (vue-router uses history mode, so a direct
+	# load/refresh of e.g. /app/folder/42 has no matching file here) and
+	# lets the router take over client-side.
 	handle_path /app/* {
 		root * /var/www/html/app
 		try_files {path} /index.html

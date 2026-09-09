@@ -1,0 +1,10 @@
+# SPA fallback: vue-router uses history mode, so a direct load/refresh of
+# e.g. /app/folder/42 has no matching file in this dist build -- send
+# anything that isn't a real file or directory to index.html and let the
+# router take over client-side.
+RewriteEngine On
+RewriteBase /app/
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+RewriteRule ^ index.html [L]

@@ -18,7 +18,6 @@ api/composer.lock
 Magrathea/
 log*.txt
 
-app/dist
 app/node_modules
 
 .DS_Store
