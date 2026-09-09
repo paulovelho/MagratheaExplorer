@@ -11,12 +11,14 @@ backups
 
 docker/.env
 vendor
-src/vendor
-src/vendor/*
-src/composer.lock
+api/vendor
+api/vendor/*
+api/composer.lock
 
 Magrathea/
 log*.txt
+
+app/node_modules
 
 .DS_Store
 

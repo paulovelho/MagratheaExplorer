@@ -1,0 +1,45 @@
+RewriteEngine On
+
+# remove for enabling folder indexes:
+Options -Indexes
+
+<Files ".user.ini">
+  Require all denied
+</Files>
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+	# uncomment for enabling folder navigation
+	# RewriteCond %{REQUEST_FILENAME} -d [OR]
+	RewriteCond %{REQUEST_FILENAME} -f
+	RewriteRule .+ - [L]
+
+  # Root has nothing of its own -- send visitors to the admin app instead of
+  # letting the request fall through to index.php (which would dispatch it
+  # into the API router with no matching route). Exact match only, so
+  # admin.php and everything else below is untouched. 302 while /app is new
+  # enough that the target could still move.
+  RewriteRule ^$ /app/ [R=302,L]
+
+  # Only requests under /api/v1/... reach the JSON API router; everything else
+  # (admin.php, error-manager assets, etc.) is served/denied as a normal file.
+  # Bump this prefix (v1 -> v2) the day the route table needs a breaking change.
+  #Respect this rules for redirecting:
+  RewriteCond %{QUERY_STRING} ^(.+)$
+  RewriteRule ^api/v1/([a-zA-Z0-9_-]+)/([a-zA-Z0-9_-]+)/(.*)$ index.php?magrathea_control=$1&magrathea_action=$2&magrathea_params=$3&%1 [L]
+  RewriteRule ^api/v1/([a-zA-Z0-9_-]+)/([a-zA-Z0-9_-]+)/(.*)$ index.php?magrathea_control=$1&magrathea_action=$2&magrathea_params=$3 [L]
+  RewriteCond %{QUERY_STRING} ^(.+)$
+  RewriteRule ^api/v1/([a-zA-Z0-9_-]+)/(.*)$ index.php?magrathea_control=$1&magrathea_action=$2&%1 [L]
+  RewriteRule ^api/v1/([a-zA-Z0-9_-]+)/(.*)$ index.php?magrathea_control=$1&magrathea_action=$2 [L]
+  RewriteCond %{QUERY_STRING} ^(.+)$
+  RewriteRule ^api/v1/(.*)$ index.php?magrathea_control=$1&%1 [L]
+  RewriteRule ^api/v1/(.*)$ index.php?magrathea_control=$1 [L]
+  SetEnvIf Authorization .+ HTTP_AUTHORIZATION=$0
+
+</IfModule>
+
+# `php_value` does not work on dreamhost servers!
+# php_value upload_max_filesize 40M
+# php_value post_max_size 42M

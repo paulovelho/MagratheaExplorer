@@ -6,7 +6,7 @@ info:
     pluggable local/S3/R2 storage. Every authenticated route takes `Authorization: Bearer <key-uuid>`.
   version: "1.0.0"
 servers:
-  - url: /api
+  - url: /api/v1
 
 components:
   securitySchemes:
@@ -114,7 +114,7 @@ paths:
 
   /folders:
     get:
-      summary: List folders for the key, or the direct children of ?parent_id=
+      summary: List the direct children of ?parent_id=, or the key's root folder's children when omitted
       parameters:
         - { name: parent_id, in: query, schema: { type: integer } }
       responses:
@@ -158,9 +158,9 @@ paths:
 
   /files:
     get:
-      summary: List files for the key
+      summary: List files in ?folder_id=, or the key's root folder when omitted
       parameters:
-        - { name: folder_id, in: query, schema: { type: integer } }
+        - { name: folder_id, in: query, schema: { type: integer, description: "defaults to the key's root folder" } }
         - { name: file_type, in: query, schema: { type: string, enum: [image, audio, video, document, other] } }
         - { name: tag, in: query, schema: { type: string } }
       responses:

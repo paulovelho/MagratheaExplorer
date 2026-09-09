@@ -1,0 +1,49 @@
+version: '3.7'
+name: 'magratheaexplorer'
+
+services:
+
+  mag_sql:
+    image: mariadb
+    container_name: "magratheaexplorer-sql"
+    command: --default-authentication-plugin=mysql_native_password
+    volumes:
+      - ./api/database:/home/backups
+    env_file:
+      - ./docker/.env
+    ports:
+      - 3306
+
+  magrathea_explorer:
+    hostname: explorer.magrathea.localhost.com
+    container_name: "magrathea-explorer"
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile
+    volumes:
+      - ./api:/var/www/html
+      - ./dist:/var/www/html/app
+      - ./api/logs:/var/www/logs
+      - ./api/cache:/var/www/cache
+      - ./api/storage:/var/www/storage
+      - ./docker/php.ini:/usr/local/etc/php/conf.d/custom.ini  # <--- Add this line
+    environment:
+      - SENTRY_DSN=${SENTRY_DSN}
+    ports:
+      - 8080:80
+      - 443
+    env_file:
+      - ./docker/.env
+
+# helper containers:
+  # magrathea_phpmyadmin:
+  #   image: phpmyadmin/phpmyadmin
+  #   container_name: magrathea-explorer_pma
+  #   environment:
+  #     PMA_HOST: mag_sql
+  #     PMA_PORT: 3306
+  #     PMA_ARBITRARY: 1
+  #   depends_on:
+  #     - mag_sql
+  #   ports:
+  #     - 8183:80

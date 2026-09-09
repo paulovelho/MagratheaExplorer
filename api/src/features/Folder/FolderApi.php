@@ -6,15 +6,11 @@ use MagratheaExplorer\ExplorerApiControl;
 
 class FolderApi extends ExplorerApiControl {
 
-	/** GET /folders -- all folders for the key, or just the direct children of ?parent_id= */
+	/** GET /folders -- direct children of ?parent_id=, or the key's root folder's children when omitted */
 	public function GetAll(): array {
 		$key = $this->GetRequestKey();
-		$parentId = $_GET["parent_id"] ?? null;
-		if($parentId !== null) {
-			$folders = FolderControl::GetSimpleWhere("`key_id` = ".(int)$key->id." AND `parent_id` = ".(int)$parentId);
-		} else {
-			$folders = FolderControl::GetWhere(["key_id" => $key->id]);
-		}
+		$parentId = !empty($_GET["parent_id"]) ? (int)$_GET["parent_id"] : FolderControl::GetRoot($key)->id;
+		$folders = FolderControl::GetSimpleWhere("`key_id` = ".(int)$key->id." AND `parent_id` = ".$parentId);
 		return array_map([$this, "FolderView"], $folders);
 	}
 

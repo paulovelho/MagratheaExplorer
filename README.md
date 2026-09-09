@@ -32,16 +32,16 @@ for the machine-readable route contract.
 
 ## Setup
 
-1. **Install dependencies** (composer.json lives under `src/`, matching where
+1. **Install dependencies** (composer.json lives under `api/`, matching where
    `_inc.php`'s `../vendor/autoload.php` resolves to):
    ```
-   cd src
+   cd api
    composer install
    ```
 
 2. **Database**: create a database and load the schema.
    ```
-   mysql -u<user> -p <dbname> < database/database.sql
+   mysql -u<user> -p <dbname> < api/database/database.sql
    ```
    This includes both the framework's own `_magrathea_*` tables (users, config, logs,
    roles) and the project's own tables (`access_keys`, `folders`, `files`, `tags`,
@@ -54,8 +54,8 @@ for the machine-readable route contract.
 
 3. **Config**: copy the two sample config files and fill in real values.
    ```
-   cp src/configs/magrathea.conf.sample src/configs/magrathea.conf
-   cp src/configs/storage.conf.sample src/configs/storage.conf
+   cp api/configs/magrathea.conf.sample api/configs/magrathea.conf
+   cp api/configs/storage.conf.sample api/configs/storage.conf
    ```
    - `magrathea.conf` — DB credentials, `app_url`, timezone (same shape as Images3's).
    - `storage.conf` — pick exactly one storage driver, instance-wide:
@@ -67,68 +67,80 @@ for the machine-readable route contract.
 
    Both files are gitignored — never commit real credentials.
 
-4. **Web server**: point your vhost's document root at `src/api/`. `.htaccess` handles
-   the URL rewriting for Apache; for local dev, PHP's built-in server works too (routes
-   have to be hit via the raw `magrathea_control`/`magrathea_action`/`magrathea_params`
-   GET params instead of pretty URLs, since `php -S` doesn't process `.htaccess`).
+4. **Web server**: point your vhost's document root at `api/src/`. The JSON API only
+   answers under `/api/v1/...` — `api/src/.htaccess` requires that prefix on every
+   route, so `GET /api/v1/version` works but bare `GET /version` 404s. `/admin.php`
+   (and any other real file directly under `api/src/`) stays reachable unprefixed,
+   since it's served directly rather than routed. For local dev, PHP's built-in server
+   works too (routes have to be hit via the raw
+   `magrathea_control`/`magrathea_action`/`magrathea_params` GET params instead of
+   pretty URLs, since `php -S` doesn't process `.htaccess`; the params themselves are
+   unprefixed — no `api/v1`).
 
-   For a local-storage deployment, the storage folder needs to be reachable at the URL
-   configured in `storage.conf`'s `local_url` — outside `src/api/`'s own docroot if
-   you're running a single vhost, so route or symlink it accordingly.
+   Two more paths need routing outside `api/src/`'s docroot, both via vhost `Alias`
+   (see `docker/apache/site-dev.conf` for the dev version of both):
+   - `/app` → `app/src/` — the Angular/Vue admin app (not built yet, see `app/src/README.md`).
+   - `/storage` → `storage.conf`'s `local_path`, so `local_url` resolves. Only needed
+     for the `local` storage driver, not s3/R2.
 
 5. **First admin user**: visit `/admin.php` in a browser — with no admin users yet, it
    shows a first-run setup form to create one. This is the *only* way to create a key;
    there is no public key-creation endpoint (a deliberate difference from Images3 — see
    `plan.md` §4).
 
-6. **Cron**: schedule `php src/api/cron.php --run` (e.g. daily) to sweep keys whose
+6. **Cron**: schedule `php api/src/cron.php --run` (e.g. daily) to sweep keys whose
    14-day scheduled-deletion window has passed. `--dry-run` lists what's due without
    deleting anything; add `--verbose` to either for per-row output.
 
 ## Directory layout
 
+`api/` and `app/` are independent top-level projects, each with its own `src/`:
+
 ```
-composer.json / composer.lock / vendor/   -> src/  (see note above)
-database/database.sql                     -> framework tables + project schema
 docs/openapi.yaml, docs/skills.md          -> API contract + AI-agent guide
-src/
-  version, changelog.md                   -> kept in sync on every version bump (see claude.md)
-  configs/                                -> magrathea.conf, storage.conf, magrathea_objects.conf
-  api/
-    _inc.php, index.php, admin.php,       -> entry points
+api/                                        -> JSON API project (document root: api/src/)
+  composer.json / composer.lock / vendor/  -> see note above
+  version, changelog.md                    -> kept in sync on every version bump (see claude.md)
+  configs/                                 -> magrathea.conf, storage.conf, magrathea_objects.conf
+  database/database.sql                    -> framework tables + project schema
+  cache/, logs/, storage/                  -> runtime dirs (gitignored, mounted into the container)
+  src/                                     -> served at /api/v1 (.htaccess enforces the prefix)
+    _inc.php, index.php, admin.php,        -> entry points (admin.php stays unprefixed, e.g. /admin.php)
     api.php, cron.php
-    error-manager/                        -> ErrorCodes + error_codes.conf
-    shared/                               -> ExplorerApiControl (bearer-key resolution), SystemApi
-    admin/                                -> MagratheaExplorerAdmin, Browser (cross-key file/folder browser)
+    error-manager/                         -> ErrorCodes + error_codes.conf
+    shared/                                -> ExplorerApiControl (bearer-key resolution), SystemApi
+    admin/                                 -> MagratheaExplorerAdmin, Browser (cross-key file/folder browser)
     features/
-      Storage/                            -> StorageAdapter interface, Local + S3 implementations
-      Key/                                -> Key, ScheduledDeletion, their admin pages
-      Folder/                             -> Folder (virtual, nestable, per-key)
-      File/                               -> File, Tag, and the whole upload pipeline
+      Storage/                             -> StorageAdapter interface, Local + S3 implementations
+      Key/                                 -> Key, ScheduledDeletion, their admin pages
+      Folder/                              -> Folder (virtual, nestable, per-key)
+      File/                                -> File, Tag, and the whole upload pipeline
+app/                                        -> Angular/Vue admin app, served at /app (not built yet)
+  src/                                     -> app source (framework choice still open, see app/src/README.md)
 ```
 
 ## Quick usage example
 
 ```
 # Get a key's own info and usage
-curl -H "Authorization: Bearer <key-uuid>" https://your-host/key
-curl -H "Authorization: Bearer <key-uuid>" https://your-host/key/usage
+curl -H "Authorization: Bearer <key-uuid>" https://your-host/api/v1/key
+curl -H "Authorization: Bearer <key-uuid>" https://your-host/api/v1/key/usage
 
 # Upload a file
 curl -X POST -H "Authorization: Bearer <key-uuid>" \
   -F "file=@photo.jpg" -F "tags=vacation,summer" \
-  https://your-host/files
+  https://your-host/api/v1/files
 
 # List files in a folder, or by type/tag
-curl -H "Authorization: Bearer <key-uuid>" "https://your-host/files?folder_id=5"
-curl -H "Authorization: Bearer <key-uuid>" "https://your-host/files?file_type=audio"
-curl -H "Authorization: Bearer <key-uuid>" "https://your-host/files?tag=logo"
+curl -H "Authorization: Bearer <key-uuid>" "https://your-host/api/v1/files?folder_id=5"
+curl -H "Authorization: Bearer <key-uuid>" "https://your-host/api/v1/files?file_type=audio"
+curl -H "Authorization: Bearer <key-uuid>" "https://your-host/api/v1/files?tag=logo"
 ```
 
 Full route list, request/response shapes, and error codes: `docs/openapi.yaml` and
-`GET /error-codes`.
+`GET /api/v1/error-codes`.
 
 ## Versioning
 
-`src/version`, `src/changelog.md`, and `docs/openapi.yaml`'s `info.version` are kept in
+`api/version`, `api/changelog.md`, and `docs/openapi.yaml`'s `info.version` are kept in
 sync on every version bump (see `claude.md`).
