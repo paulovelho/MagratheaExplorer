@@ -8,6 +8,7 @@ try {
 		->AddCodeFolder(
 			"admin",
 			"admin/Browser",
+			"admin/Storage",
 			"shared",
 			"error-manager",
 		)
