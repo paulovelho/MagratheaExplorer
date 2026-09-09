@@ -77,11 +77,21 @@ for the machine-readable route contract.
    pretty URLs, since `php -S` doesn't process `.htaccess`; the params themselves are
    unprefixed — no `api/v1`).
 
-   Two more paths need routing outside `api/src/`'s docroot, both via vhost `Alias`
-   (see `docker/apache/site-dev.conf` for the dev version of both):
-   - `/app` → `app/src/` — the Angular/Vue admin app (not built yet, see `app/src/README.md`).
+   `/app` (the admin app, built from `app/` into the repo-root `dist/`, committed to
+   git) needs no vhost config at all: `api/src/app` is a symlink to `../../dist`,
+   committed alongside it, and `api/src/.htaccess` sets `Options +FollowSymLinks` so
+   it resolves even on hosts that don't enable that by default. "Point the docroot at
+   `api/src/`" is the whole setup — nothing extra to configure for `/app` on bare
+   Apache/shared hosting. (In the docker-compose dev stack, `docker/apache/site-dev.conf`
+   instead `Alias`es `/app` straight at the bind-mounted `dist/`, which just shadows
+   the symlink — same result either way.)
+
+   One more path needs routing outside `api/src/`'s docroot, via vhost `Alias` (see
+   `docker/apache/site-dev.conf` for the dev version):
    - `/storage` → `storage.conf`'s `local_path`, so `local_url` resolves. Only needed
-     for the `local` storage driver, not s3/R2.
+     for the `local` storage driver, not s3/R2 — and not solvable with a committed
+     symlink like `/app`, since `storage/` is a gitignored runtime directory, not a
+     build artifact.
 
 5. **First admin user**: visit `/admin.php` in a browser — with no admin users yet, it
    shows a first-run setup form to create one. This is the *only* way to create a key;
@@ -115,8 +125,9 @@ api/                                        -> JSON API project (document root: 
       Key/                                 -> Key, ScheduledDeletion, their admin pages
       Folder/                              -> Folder (virtual, nestable, per-key)
       File/                                -> File, Tag, and the whole upload pipeline
-app/                                        -> Angular/Vue admin app, served at /app (not built yet)
-  src/                                     -> app source (framework choice still open, see app/src/README.md)
+app/                                        -> Vue 3 + Vite admin app source (see script/build.sh)
+dist/                                       -> app/'s build output, committed to git; served at /app
+                                                via api/src/app (a committed symlink to ../../dist)
 ```
 
 ## Quick usage example

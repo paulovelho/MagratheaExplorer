@@ -3,6 +3,12 @@ RewriteEngine On
 # remove for enabling folder indexes:
 Options -Indexes
 
+# /app is a symlink to the repo-root dist/ (Vite's build output) so the admin
+# app works with nothing more than "point the vhost docroot at api/src" --
+# no separate Alias directive needed in prod. Explicit here since some hosts
+# don't have FollowSymLinks on by default.
+Options +FollowSymLinks
+
 <Files ".user.ini">
   Require all denied
 </Files>
