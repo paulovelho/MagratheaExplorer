@@ -38,14 +38,12 @@ class FileApi extends ExplorerApiControl {
 		return $this->FileView($file);
 	}
 
-	/** GET /files -- filters: ?folder_id=, ?file_type=, ?tag= */
+	/** GET /files -- filters: ?folder_id= (defaults to the key's root folder), ?file_type=, ?tag= */
 	public function GetAll(): array {
 		$key = $this->GetRequestKey();
-		$conditions = ["`key_id` = ".(int)$key->id];
+		$folderId = !empty($_GET["folder_id"]) ? (int)$_GET["folder_id"] : FolderControl::GetRoot($key)->id;
+		$conditions = ["`key_id` = ".(int)$key->id, "`folder_id` = ".$folderId];
 
-		if(!empty($_GET["folder_id"])) {
-			$conditions[] = "`folder_id` = ".(int)$_GET["folder_id"];
-		}
 		if(!empty($_GET["file_type"])) {
 			if(!in_array($_GET["file_type"], self::$validFileTypes, true)) {
 				ErrorCodes::Instance()->ThrowException(4001, null, "file_type");

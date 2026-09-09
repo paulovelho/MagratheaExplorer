@@ -1,4 +1,4 @@
-# Caddy equivalent of docker/apache/site-dev.conf + src/api/.htaccess.
+# Caddy equivalent of docker/apache/site-dev.conf + api/src/.htaccess.
 # Not wired into docker-compose.yml (that still builds the Apache image for
 # dev) -- this is a reference config for a Caddy-fronted instance (see
 # plan.md §11: "bare Apache/Caddy in prod").
@@ -12,20 +12,28 @@
 # php-fpm listener (unix socket or host:port).
 
 platypusweb.com.br {
-	root * /var/www/html/api
+	root * /var/www/html/src
 
 	# .user.ini is Apache/php.ini-specific config -- never serve it (parity
-	# with the <Files ".user.ini"> deny block in src/api/.htaccess). Caddy's
+	# with the <Files ".user.ini"> deny block in api/src/.htaccess). Caddy's
 	# file_server never lists directories by default, so no Options -Indexes
 	# equivalent is needed.
 	@userini path *.user.ini
 	respond @userini 403
 
+	# Root has nothing of its own -- send visitors to the admin app instead
+	# of falling through to php_fastcgi (which would dispatch it into the
+	# API router with no matching route). Exact match only, so admin.php and
+	# everything else below is untouched. Mirrors the same rule in
+	# api/src/.htaccess.
+	@root path /
+	redir @root /app/ 302
+
 	# Only requests under /api/v1/... reach the JSON API router; everything
 	# else (admin.php, error-manager assets, etc.) falls through to the
 	# default handle below and is served/executed as a normal file.
 	# Bump this prefix (v1 -> v2) the day the route table needs a breaking
-	# change -- mirrors the same comment in src/api/.htaccess.
+	# change -- mirrors the same comment in api/src/.htaccess.
 	@apiv1 path_regexp apiv1 ^/api/v1/(.*)$
 	handle @apiv1 {
 		# index.php reads magrathea_control/action/params from $_GET and just
@@ -41,23 +49,27 @@ platypusweb.com.br {
 		php_fastcgi 127.0.0.1:9000
 	}
 
-	# storage.conf's local_path lives outside src/api's docroot -- route it
+	# storage.conf's local_path lives outside api/src's docroot -- route it
 	# here so local_url (.../storage) resolves. Not needed for s3/R2 drivers.
 	handle_path /storage/* {
 		root * /var/www/storage
 		file_server
 	}
 
-	# New Angular/Vue admin app lives outside src/api's docroot too -- served
-	# at /app, sibling to the versioned JSON API at /api/v1. Placeholder
-	# until the real SPA build lands here.
+	# Admin app (Vue 3 + Vite) lives in the separate app/ project at the repo
+	# root -- served at /app, sibling to the versioned JSON API at /api/v1.
+	# Points at app/dist (Vite's build output), not app/src. try_files falls
+	# back to index.html for any path that isn't a real file (vue-router
+	# uses history mode, so a direct load/refresh of e.g. /app/folder/42 has
+	# no matching file here) and lets the router take over client-side.
 	handle_path /app/* {
 		root * /var/www/html/app
+		try_files {path} /index.html
 		file_server
 	}
 
 	# Default: anything not matched above (admin.php, direct .php class
-	# files, static assets) is executed/served straight from src/api, same
+	# files, static assets) is executed/served straight from api/src, same
 	# as Apache's `RewriteCond %{REQUEST_FILENAME} -f` passthrough.
 	handle {
 		php_fastcgi 127.0.0.1:9000

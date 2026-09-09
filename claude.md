@@ -12,9 +12,9 @@
 
 # Versioning
 
-- App version lives in `src/version` (plain text, no trailing newline) — read at runtime by `MagratheaPHP::AppVersion()` for the `/version` endpoint.
-- Changelog lives in `src/changelog.md` — parsed by the `changelog` endpoint (5 most recent versions).
-- `src/swagger.yaml` also has a `version:` field near the top that should be kept in sync with `src/version`.
+- App version lives in `api/version` (plain text, no trailing newline) — read at runtime by `MagratheaPHP::AppVersion()` for the `/version` endpoint.
+- Changelog lives in `api/changelog.md` — parsed by the `changelog` endpoint (5 most recent versions).
+- `docs/openapi.yaml` also has a `version:` field near the top that should be kept in sync with `api/version`.
 
 When bumping the version, update all three.
 

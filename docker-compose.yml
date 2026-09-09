@@ -8,7 +8,7 @@ services:
     container_name: "magratheaexplorer-sql"
     command: --default-authentication-plugin=mysql_native_password
     volumes:
-      - ./database:/home/backups
+      - ./api/database:/home/backups
     env_file:
       - ./docker/.env
     ports:
@@ -21,10 +21,11 @@ services:
       context: .
       dockerfile: ./docker/Dockerfile
     volumes:
-      - ./src:/var/www/html
-      - ./logs:/var/www/logs
-      - ./cache:/var/www/cache
-      - ./storage:/var/www/storage
+      - ./api:/var/www/html
+      - ./app/dist:/var/www/html/app
+      - ./api/logs:/var/www/logs
+      - ./api/cache:/var/www/cache
+      - ./api/storage:/var/www/storage
       - ./docker/php.ini:/usr/local/etc/php/conf.d/custom.ini  # <--- Add this line
     environment:
       - SENTRY_DSN=${SENTRY_DSN}

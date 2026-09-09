@@ -16,6 +16,13 @@ Options -Indexes
 	RewriteCond %{REQUEST_FILENAME} -f
 	RewriteRule .+ - [L]
 
+  # Root has nothing of its own -- send visitors to the admin app instead of
+  # letting the request fall through to index.php (which would dispatch it
+  # into the API router with no matching route). Exact match only, so
+  # admin.php and everything else below is untouched. 302 while /app is new
+  # enough that the target could still move.
+  RewriteRule ^$ /app/ [R=302,L]
+
   # Only requests under /api/v1/... reach the JSON API router; everything else
   # (admin.php, error-manager assets, etc.) is served/denied as a normal file.
   # Bump this prefix (v1 -> v2) the day the route table needs a breaking change.
