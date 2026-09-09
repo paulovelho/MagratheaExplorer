@@ -57,6 +57,30 @@ class FolderControl extends \MagratheaExplorer\Folder\Base\FolderControlBase {
 		return $folder;
 	}
 
+	/**
+	 * Like Create(), but returns the existing folder instead of throwing 4004 when one
+	 * with that (key_id, parent_id, name) already exists. Used by bulk import, which needs
+	 * re-running the same import to reuse the folder tree it already created rather than
+	 * erroring out on the second pass.
+	 */
+	public static function GetOrCreate(Key $key, ?int $parentId, string $name): Folder {
+		$name = trim($name);
+		if(empty($name)) {
+			ErrorCodes::Instance()->ThrowException(4001, null, "name");
+		}
+		$parent = $parentId !== null ? self::GetForKey($key, $parentId) : self::GetRoot($key);
+		$existing = self::GetRowWhere(["key_id" => $key->id, "parent_id" => $parent->id, "name" => $name]);
+		if($existing !== null) {
+			return $existing;
+		}
+		$folder = new Folder();
+		$folder->key_id = $key->id;
+		$folder->parent_id = $parent->id;
+		$folder->name = $name;
+		$folder->Insert();
+		return $folder;
+	}
+
 	public static function Rename(Folder $folder, string $name): Folder {
 		$name = trim($name);
 		if(empty($name)) {

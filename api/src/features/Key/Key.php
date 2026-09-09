@@ -56,10 +56,21 @@ class Key extends \MagratheaExplorer\Key\Base\KeyBase {
 	 * can a key that would cross either of its two independent caps.
 	 */
 	public function AssertCanUpload(int $incomingSize): void {
+		$this->AssertCanImport($incomingSize, true);
+	}
+
+	/**
+	 * Same validity gate as AssertCanUpload() (active/expiration/pending-deletion always
+	 * apply), but the two numeric caps (usage_limit/usage_limit_mb) are only checked when
+	 * $enforceQuota is true. Used by bulk import, which deliberately runs past a key's
+	 * configured caps rather than stopping partway through a directory tree.
+	 */
+	public function AssertCanImport(int $incomingSize, bool $enforceQuota): void {
 		$this->AssertUsable();
 		if($this->HasPendingScheduledDeletion()) {
 			ErrorCodes::Instance()->ThrowException(4014);
 		}
+		if(!$enforceQuota) return;
 		if($this->usage_limit !== null && $this->uses >= $this->usage_limit) {
 			ErrorCodes::Instance()->ThrowException(4031);
 		}

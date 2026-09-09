@@ -32,14 +32,17 @@ class UploadPipeline {
 	/**
 	 * @param array $uploadedFile One entry of $_FILES (name/type/tmp_name/error/size)
 	 * @param string[] $tagNames  Tag names to attach after a successful upload
+	 * @param bool $enforceQuota  False lets a bulk import (see ImportPipeline) run past the
+	 *                            key's usage_limit/usage_limit_mb caps; active/expiration/
+	 *                            pending-deletion checks always apply regardless.
 	 */
-	public static function Handle(Key $key, Folder $folder, array $uploadedFile, bool $noConvert, array $tagNames = []): File {
+	public static function Handle(Key $key, Folder $folder, array $uploadedFile, bool $noConvert, array $tagNames = [], bool $enforceQuota = true): File {
 		self::AssertUploadOk($uploadedFile);
 		$uploadSize = (int)($uploadedFile["size"] ?? 0);
 		self::AssertMaxSize($uploadSize);
 		// Checked before any processing work happens -- against the raw upload size, a
 		// conservative upper bound; the real deduction below uses the final stored size.
-		$key->AssertCanUpload($uploadSize);
+		$key->AssertCanImport($uploadSize, $enforceQuota);
 
 		$workingPath = self::MoveToWorkingCopy($uploadedFile["tmp_name"]);
 		$tempFiles = [$workingPath];
