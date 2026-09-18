@@ -125,7 +125,7 @@ class FileApi extends ExplorerApiControl {
 			"height" => $file->height !== null ? (int)$file->height : null,
 			"duration" => $file->duration !== null ? (int)$file->duration : null,
 			"no_convert" => (bool)$file->no_convert,
-			"url" => $storage->url($file->storage_path),
+			"url" => $storage->url($file->storage_path, $file->name, $file->DispositionType()),
 			"thumbnail_url" => $file->HasThumbnail()
 				? $storage->url($file->thumbnail_token.".".(strtolower($file->extension) === "png" ? "png" : "jpg"))
 				: null,

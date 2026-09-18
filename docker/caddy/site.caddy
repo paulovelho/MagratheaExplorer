@@ -51,8 +51,17 @@ platypusweb.com.br {
 
 	# storage.conf's local_path lives outside api/src's docroot -- route it
 	# here so local_url (.../storage) resolves. Not needed for s3/R2 drivers.
+	#
+	# No PHP in this read path (see StorageAdapter docs), so LocalStorageAdapter::url()
+	# smuggles the download name in as ?disposition=&filename= and this block turns
+	# that into the real Content-Disposition header -- Apache-side equivalent is
+	# api/storage/.htaccess. filename is already reduced to [A-Za-z0-9._-] on the PHP
+	# side, so the raw (already-decoded-by-Caddy) placeholder value is safe to drop
+	# straight into the header with no extra encoding/decoding of our own.
 	handle_path /storage/* {
 		root * /var/www/storage
+		@download `{http.request.uri.query.filename} != ''`
+		header @download Content-Disposition "{http.request.uri.query.disposition}; filename=\"{http.request.uri.query.filename}\""
 		file_server
 	}
 

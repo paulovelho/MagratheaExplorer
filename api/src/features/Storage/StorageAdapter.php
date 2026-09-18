@@ -24,7 +24,12 @@ interface StorageAdapter {
 	 */
 	public function delete(string $path): void;
 
-	public function url(string $path): string;
+	/**
+	 * $downloadName/$dispositionType only matter to adapters that have no other way to
+	 * set response headers per file (local); S3 already baked Content-Disposition into
+	 * object metadata at upload time and ignores them here.
+	 */
+	public function url(string $path, ?string $downloadName = null, string $dispositionType = "inline"): string;
 
 	public function exists(string $path): bool;
 

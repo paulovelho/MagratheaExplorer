@@ -67,7 +67,9 @@ class S3StorageAdapter implements StorageAdapter {
 		}
 	}
 
-	public function url(string $path): string {
+	// $downloadName/$dispositionType ignored: Content-Disposition was already baked
+	// into object metadata at put() time (see class doc above).
+	public function url(string $path, ?string $downloadName = null, string $dispositionType = "inline"): string {
 		if($this->publicUrlBase) {
 			return $this->publicUrlBase."/".ltrim($path, "/");
 		}

@@ -18,6 +18,7 @@ RUN apt-get update && apt-get install -y \
 	&& rm -rf /var/lib/apt/lists/*
 
 RUN a2enmod rewrite
+RUN a2enmod headers
 RUN a2enmod ssl
 RUN a2ensite 000-default.conf
 

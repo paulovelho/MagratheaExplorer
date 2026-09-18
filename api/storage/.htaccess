@@ -1,0 +1,19 @@
+# Local storage's file_server has no per-request PHP to attach headers with (see
+# StorageAdapter interface docs) -- LocalStorageAdapter::url() smuggles the download
+# name and disposition type in as ?disposition=&filename=, and this file turns that
+# into the actual Content-Disposition response header. filename is ASCII-only and
+# already sanitized (no quotes/backslash/control chars) by the PHP side, so it's safe
+# to drop straight into a quoted filename="..." with no further decoding needed.
+#
+# Keep the query order (disposition before filename) in sync with
+# LocalStorageAdapter::url() -- this single RewriteCond depends on it so both values
+# are only ever set together, never one without the other.
+<IfModule mod_rewrite.c>
+	RewriteEngine On
+	RewriteCond %{QUERY_STRING} (?:^|&)disposition=(attachment|inline)&filename=([^&]+) [NC]
+	RewriteRule ^ - [E=DL_TYPE:%1,E=DL_NAME:%2]
+</IfModule>
+
+<IfModule mod_headers.c>
+	Header set Content-Disposition "%{DL_TYPE}e; filename=\"%{DL_NAME}e\"" env=DL_NAME
+</IfModule>

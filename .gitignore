@@ -6,7 +6,8 @@ logs/*.txt
 logs/*.log
 logs/
 plugins
-storage
+/api/storage/*
+!/api/storage/.htaccess
 backups
 
 docker/.env

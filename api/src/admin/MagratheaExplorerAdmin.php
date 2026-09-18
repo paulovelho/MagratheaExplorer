@@ -17,6 +17,7 @@ class MagratheaExplorerAdmin extends Admin implements \Magrathea2\Admin\iAdmin {
 	public function Initialize() {
 		$this->SetTitle("Magrathea Explorer Admin");
 		$this->SetPrimaryColor("#0e6b91");
+		$this->favicon = __DIR__."/assets/favicon.svg";
 		parent::Initialize();
 	}
 
@@ -40,6 +41,7 @@ class MagratheaExplorerAdmin extends Admin implements \Magrathea2\Admin\iAdmin {
 		$this->features["browser"] = new BrowserAdmin();
 		$this->features["storage"] = new StorageAdmin();
 		$this->features["import"] = new ImportAdmin();
+		$this->features["duplicates"] = new DuplicatesAdmin();
 		$this->AddFeaturesArray($this->features);
 	}
 
@@ -48,6 +50,7 @@ class MagratheaExplorerAdmin extends Admin implements \Magrathea2\Admin\iAdmin {
 		$menu
 			->Add($this->features["browser"]->GetMenuItem())
 			->Add($this->features["import"]->GetMenuItem())
+			->Add($this->features["duplicates"]->GetMenuItem())
 			->Add($this->features["key"]->GetMenuItem())
 			->Add($this->features["scheduled-deletion"]->GetMenuItem())
 			->Add($this->features["storage"]->GetMenuItem())

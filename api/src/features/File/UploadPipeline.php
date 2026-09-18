@@ -92,7 +92,10 @@ class UploadPipeline {
 			// Content-Disposition is set once, at upload time -- there's no PHP in the read
 			// path to correct it later. Forced to attachment for file_type=other and SVG:
 			// the real stored-XSS protection, since nosniff has no PutObject equivalent.
-			$disposition = ($fileType === "other" || $finalExtension === "svg") ? "attachment" : "inline";
+			// The client's original filename rides along in the header so a download gets
+			// that name instead of the opaque {token}.{ext} storage key.
+			$dispositionType = File::DispositionTypeFor($fileType, $finalExtension);
+			$disposition = self::BuildDisposition($dispositionType, $uploadedFile["name"] ?? "upload");
 			$storagePath = $fileToken.".".$finalExtension;
 
 			$storage = StorageFactory::Instance()->Get();
@@ -140,6 +143,21 @@ class UploadPipeline {
 				if(is_file($tmp)) @unlink($tmp);
 			}
 		}
+	}
+
+	/**
+	 * Builds a Content-Disposition value carrying the original filename: a quoted
+	 * ASCII-only `filename` for legacy clients plus an RFC 5987 `filename*` for correct
+	 * Unicode handling everywhere else. $originalName is client-supplied and untrusted,
+	 * so both are stripped of path separators, quotes, and non-printable/non-ASCII bytes
+	 * before being embedded in a header value.
+	 */
+	private static function BuildDisposition(string $dispositionType, string $originalName): string {
+		$originalName = basename($originalName);
+		$asciiFallback = preg_replace('/[^\x20-\x7E]/', '_', $originalName);
+		$asciiFallback = str_replace(['"', '\\'], '_', $asciiFallback);
+		if($asciiFallback === "") $asciiFallback = "download";
+		return $dispositionType.'; filename="'.$asciiFallback.'"; filename*=UTF-8\'\''.rawurlencode($originalName);
 	}
 
 	private static function MoveToWorkingCopy(string $uploadedTmpName): string {

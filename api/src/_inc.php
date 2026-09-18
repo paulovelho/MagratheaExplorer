@@ -10,6 +10,7 @@ try {
 			"admin/Browser",
 			"admin/Storage",
 			"admin/Import",
+			"admin/Duplicates",
 			"shared",
 			"error-manager",
 		)
