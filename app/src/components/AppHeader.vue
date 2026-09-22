@@ -3,10 +3,12 @@ import { onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { clearKey } from '../api/client'
 import { useKeyUsage } from '../composables/useKeyUsage'
+import { useAppName } from '../composables/useAppName'
 import { formatBytes } from '../utils/format'
 import logoUrl from '../assets/logo.png'
 
 const router = useRouter()
+const { appName } = useAppName()
 const { usage, refresh } = useKeyUsage()
 
 onMounted(() => {
@@ -34,7 +36,7 @@ function logout() {
          the way back to the file list from it. -->
     <router-link :to="{ name: 'explorer', params: {} }" class="title">
       <img :src="logoUrl" class="logo" alt="" />
-      <h1>Magrathea Explorer</h1>
+      <h1>{{ appName }}</h1>
     </router-link>
     <div class="right">
       <router-link :to="{ name: 'shares' }" class="nav-link">Shared links</router-link>

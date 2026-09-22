@@ -1,6 +1,6 @@
 <script setup>
 import { getFileIcon, FOLDER_ICON } from '../utils/icons'
-import { formatBytes, formatDate } from '../utils/format'
+import { formatBytes } from '../utils/format'
 
 /**
  * Read-only twin of FileList for the public share page. The item shapes are identical
@@ -33,7 +33,6 @@ const emit = defineEmits(['open-folder'])
         <span class="name">{{ folder.name }}</span>
       </span>
       <span class="meta">—</span>
-      <span class="meta">—</span>
     </button>
 
     <a
@@ -50,7 +49,6 @@ const emit = defineEmits(['open-folder'])
         <span class="name">{{ file.name }}</span>
       </span>
       <span class="meta">{{ formatBytes(file.size) }}</span>
-      <span class="meta">{{ formatDate(file.created_at) }}</span>
     </a>
   </div>
 </template>
@@ -69,7 +67,7 @@ const emit = defineEmits(['open-folder'])
 
 .row {
   display: grid;
-  grid-template-columns: 1fr 90px 160px;
+  grid-template-columns: 1fr 90px;
   align-items: center;
   gap: 0.5rem;
   width: 100%;

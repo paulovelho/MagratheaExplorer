@@ -10,10 +10,20 @@ use MagratheaExplorer\File\UploadPipeline;
 
 class SystemApi extends MagratheaApiControl {
 
+	const DEFAULT_APP_NAME = "Magrathea Explorer";
+
+	/**
+	 * Display name shared by the explorer app and the admin, from ConfigApp's `app_name`.
+	 */
+	public static function AppName(): string {
+		return ConfigApp::Instance()->Get("app_name") ?: self::DEFAULT_APP_NAME;
+	}
+
 	public function GetSettings(): array {
 		$maxUpload = ConfigApp::Instance()->Get("max_upload_size") ?? UploadPipeline::DEFAULT_MAX_UPLOAD_SIZE;
 		$thumbSize = ConfigApp::Instance()->Get("thumbnail_size") ?? UploadPipeline::DEFAULT_THUMBNAIL_SIZE;
 		return [
+			"app_name" => self::AppName(),
 			"max_upload_size" => (string)$maxUpload,
 			"max_upload_size_formatted" => MagratheaHelper::FormatSize((int)$maxUpload),
 			"thumbnail_size" => (int)$thumbSize,

@@ -3,8 +3,10 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { setKey, clearKey } from '../api/client'
 import { fetchKey } from '../api/key'
+import { useAppName } from '../composables/useAppName'
 
 const router = useRouter()
+const { appName } = useAppName()
 const keyInput = ref('')
 const error = ref('')
 const loading = ref(false)
@@ -42,7 +44,7 @@ async function submit() {
 <template>
   <div class="login-screen">
     <form class="login-card" @submit.prevent="submit">
-      <h1>Magrathea Explorer</h1>
+      <h1>{{ appName }}</h1>
       <p class="subtitle">Enter your access key to continue.</p>
       <input
         v-model="keyInput"

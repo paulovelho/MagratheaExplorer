@@ -16,7 +16,7 @@ class MagratheaExplorerAdmin extends Admin implements \Magrathea2\Admin\iAdmin {
 	private $features = [];
 
 	public function Initialize() {
-		$this->SetTitle("Magrathea Explorer Admin");
+		$this->SetTitle(SystemApi::AppName()." Admin");
 		$this->SetPrimaryColor("#0e6b91");
 		$this->favicon = __DIR__."/assets/favicon.svg";
 		parent::Initialize();

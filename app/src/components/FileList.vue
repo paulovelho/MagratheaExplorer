@@ -100,7 +100,7 @@ function startShare(kind, item) {
         <span v-else class="name">{{ folder.name }}</span>
       </button>
       <span class="meta">—</span>
-      <span class="meta">{{ formatDate(folder.created_at) }}</span>
+      <span class="meta date">{{ formatDate(folder.created_at) }}</span>
       <div class="actions">
         <template v-if="confirmDeleteKey === `folder:${folder.uuid}`">
           <span class="confirm-text">Delete?</span>
@@ -136,7 +136,7 @@ function startShare(kind, item) {
         <span v-else class="name">{{ file.name }}</span>
       </a>
       <span class="meta">{{ formatBytes(file.size) }}</span>
-      <span class="meta">{{ formatDate(file.created_at) }}</span>
+      <span class="meta date">{{ formatDate(file.created_at) }}</span>
       <div class="actions">
         <template v-if="confirmDeleteKey === `file:${file.uuid}`">
           <span class="confirm-text">Delete?</span>
@@ -243,5 +243,15 @@ function startShare(kind, item) {
 
 .confirm-text {
   color: #666;
+}
+
+@media (max-width: 640px) {
+  .row {
+    grid-template-columns: 1fr 90px auto;
+  }
+
+  .date {
+    display: none;
+  }
 }
 </style>

@@ -139,7 +139,7 @@ paths:
 
   /settings:
     get:
-      summary: Public runtime settings (max upload size, thumbnail size)
+      summary: Public runtime settings (app name, max upload size, thumbnail size)
       security: []
       responses: { "200": { description: OK } }
 
