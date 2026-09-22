@@ -24,3 +24,9 @@ app/node_modules
 .DS_Store
 
 .vscode
+
+
+.dh-diag
+*/.dh-diag
+api/composer.phar
+
