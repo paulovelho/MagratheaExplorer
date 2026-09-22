@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { clearKey } from '../api/client'
 import { useKeyUsage } from '../composables/useKeyUsage'
 import { formatBytes } from '../utils/format'
+import logoUrl from '../assets/logo.png'
 
 const router = useRouter()
 const { usage, refresh } = useKeyUsage()
@@ -32,6 +33,7 @@ function logout() {
     <!-- A link, not plain text: /app/shares is a full page of its own, so the title is
          the way back to the file list from it. -->
     <router-link :to="{ name: 'explorer', params: {} }" class="title">
+      <img :src="logoUrl" class="logo" alt="" />
       <h1>Magrathea Explorer</h1>
     </router-link>
     <div class="right">
@@ -53,8 +55,16 @@ function logout() {
 }
 
 .title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   color: inherit;
   text-decoration: none;
+}
+
+.logo {
+  width: 28px;
+  height: 28px;
 }
 
 h1 {

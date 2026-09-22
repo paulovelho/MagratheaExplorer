@@ -5,6 +5,7 @@ import SharedFileList from '../components/SharedFileList.vue'
 import { fetchShare, fetchShareFolder } from '../api/publicShare'
 import { getFileIcon } from '../utils/icons'
 import { formatBytes } from '../utils/format'
+import logoUrl from '../assets/logo.png'
 
 const props = defineProps({
   uuid: { type: String, required: true },
@@ -60,6 +61,7 @@ function openCrumb(crumb, index) {
          "Log out" button. Nothing on this page may show the owner's key or identity, or
          link back into /app. -->
     <header class="shared-header">
+      <img :src="logoUrl" class="logo" alt="" />
       <span class="brand">Shared</span>
       <span v-if="share" class="title">{{ share.name }}</span>
     </header>
@@ -115,10 +117,16 @@ function openCrumb(crumb, index) {
 
 .shared-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0.6rem;
   padding: 0.75rem 1.5rem;
   border-bottom: 1px solid #e0e0e0;
+}
+
+.logo {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
 }
 
 .brand {

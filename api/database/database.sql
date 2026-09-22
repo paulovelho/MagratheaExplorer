@@ -45,6 +45,9 @@ CREATE TABLE `_magrathea_logs` (
 
 -- MagratheaExplorer project tables
 
+SET FOREIGN_KEY_CHECKS = 0;
+
+DROP TABLE IF EXISTS `access_keys`;
 CREATE TABLE `access_keys` (
 	`id` int(11) PRIMARY KEY AUTO_INCREMENT,
 	`uuid` char(36) NOT NULL UNIQUE COMMENT 'Bearer credential -- must never appear in a URL.',
@@ -60,6 +63,7 @@ CREATE TABLE `access_keys` (
 	`updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
+DROP TABLE IF EXISTS `scheduled_deletions`;
 CREATE TABLE `scheduled_deletions` (
 	`id` int(11) PRIMARY KEY AUTO_INCREMENT,
 	`key_id` int(11) NOT NULL,
@@ -69,6 +73,7 @@ CREATE TABLE `scheduled_deletions` (
 	FOREIGN KEY (`key_id`) REFERENCES `access_keys`(`id`)
 );
 
+DROP TABLE IF EXISTS `folders`;
 CREATE TABLE `folders` (
 	`id` int(11) PRIMARY KEY AUTO_INCREMENT,
 	`uuid` char(36) NOT NULL UNIQUE,
@@ -82,6 +87,7 @@ CREATE TABLE `folders` (
 	FOREIGN KEY (`parent_id`) REFERENCES `folders`(`id`)
 );
 
+DROP TABLE IF EXISTS `files`;
 CREATE TABLE `files` (
 	`id` int(11) PRIMARY KEY AUTO_INCREMENT,
 	`uuid` char(36) NOT NULL UNIQUE,
@@ -106,11 +112,13 @@ CREATE TABLE `files` (
 	FOREIGN KEY (`folder_id`) REFERENCES `folders`(`id`)
 );
 
+DROP TABLE IF EXISTS `tags`;
 CREATE TABLE `tags` (
 	`id` int(11) PRIMARY KEY AUTO_INCREMENT,
 	`name` varchar(100) NOT NULL UNIQUE
 );
 
+DROP TABLE IF EXISTS `file_tags`;
 CREATE TABLE `file_tags` (
 	`file_id` int(11) NOT NULL,
 	`tag_id` int(11) NOT NULL,
@@ -119,6 +127,7 @@ CREATE TABLE `file_tags` (
 	FOREIGN KEY (`tag_id`) REFERENCES `tags`(`id`)
 );
 
+DROP TABLE IF EXISTS `shares`;
 CREATE TABLE `shares` (
 	`id` int(11) PRIMARY KEY AUTO_INCREMENT,
 	`uuid` char(36) NOT NULL UNIQUE COMMENT 'The share link itself. Public but unguessable -- holding it IS the access check.',
@@ -140,3 +149,5 @@ CREATE TABLE `shares` (
 	FOREIGN KEY (`file_id`) REFERENCES `files`(`id`),
 	FOREIGN KEY (`folder_id`) REFERENCES `folders`(`id`)
 );
+
+SET FOREIGN_KEY_CHECKS = 1;
