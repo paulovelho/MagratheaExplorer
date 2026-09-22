@@ -9,6 +9,8 @@ use MagratheaExplorer\Key\KeyApi;
 use MagratheaExplorer\Key\KeyAuthControl;
 use MagratheaExplorer\Folder\FolderApi;
 use MagratheaExplorer\File\FileApi;
+use MagratheaExplorer\Share\ShareApi;
+use MagratheaExplorer\Share\PublicShareApi;
 
 class MagratheaExplorerApi extends MagratheaApi {
 
@@ -36,6 +38,7 @@ class MagratheaExplorerApi extends MagratheaApi {
 		$this->AddKey();
 		$this->AddFolder();
 		$this->AddFile();
+		$this->AddShare();
 		$this->GeneralApis();
 	}
 
@@ -61,23 +64,41 @@ class MagratheaExplorerApi extends MagratheaApi {
 
 	private function AddFolder() {
 		$api = new FolderApi();
-		$this->Add("GET", "folders", $api, "GetAll", self::AUTHENTICATED, "GET: parent_id=?");
+		$this->Add("GET", "folders", $api, "GetAll", self::AUTHENTICATED, "GET: parent_uuid=?");
 		$this->Add("POST", "folders", $api, "Create", self::AUTHENTICATED);
-		$this->Add("GET", "folder/:id", $api, "Get", self::AUTHENTICATED);
-		$this->Add("PUT", "folder/:id", $api, "Update", self::AUTHENTICATED);
-		$this->Add("DELETE", "folder/:id", $api, "Delete", self::AUTHENTICATED);
-		$this->Add("GET", "folder/:id/size", $api, "GetSize", self::AUTHENTICATED);
+		$this->Add("GET", "folder/:uuid", $api, "Get", self::AUTHENTICATED);
+		$this->Add("PUT", "folder/:uuid", $api, "Update", self::AUTHENTICATED);
+		$this->Add("DELETE", "folder/:uuid", $api, "Delete", self::AUTHENTICATED);
+		$this->Add("GET", "folder/:uuid/size", $api, "GetSize", self::AUTHENTICATED);
 	}
 
 	private function AddFile() {
 		$api = new FileApi();
 		$this->Add("POST", "files", $api, "Upload", self::AUTHENTICATED);
-		$this->Add("GET", "files", $api, "GetAll", self::AUTHENTICATED, "GET: folder_id=?, file_type=?, tag=?");
-		$this->Add("GET", "file/:id", $api, "Get", self::AUTHENTICATED);
-		$this->Add("PUT", "file/:id", $api, "Update", self::AUTHENTICATED);
-		$this->Add("DELETE", "file/:id", $api, "Delete", self::AUTHENTICATED);
-		$this->Add("POST", "file/:id/tags", $api, "AttachTag", self::AUTHENTICATED);
-		$this->Add("DELETE", "file/:id/tags/:tag", $api, "DetachTag", self::AUTHENTICATED);
+		$this->Add("GET", "files", $api, "GetAll", self::AUTHENTICATED, "GET: folder_uuid=?, file_type=?, tag=?");
+		$this->Add("GET", "file/:uuid", $api, "Get", self::AUTHENTICATED);
+		$this->Add("PUT", "file/:uuid", $api, "Update", self::AUTHENTICATED);
+		$this->Add("DELETE", "file/:uuid", $api, "Delete", self::AUTHENTICATED);
+		$this->Add("POST", "file/:uuid/tags", $api, "AttachTag", self::AUTHENTICATED);
+		$this->Add("DELETE", "file/:uuid/tags/:tag", $api, "DetachTag", self::AUTHENTICATED);
+	}
+
+	/**
+	 * Two surfaces, deliberately under different literal prefixes. Route matching is
+	 * positional and first-match-wins within one HTTP method (MagratheaApi::FindRoute()),
+	 * so the owner's `shares`/`share/:uuid` and the public `shared/:uuid` can never
+	 * shadow each other.
+	 */
+	private function AddShare() {
+		$api = new ShareApi();
+		$this->Add("POST", "shares", $api, "Create", self::AUTHENTICATED, "POST: file_uuid=? XOR folder_uuid=?");
+		$this->Add("GET", "shares", $api, "GetAll", self::AUTHENTICATED, "GET: file_uuid=?, folder_uuid=?");
+		$this->Add("DELETE", "share/:uuid", $api, "Delete", self::AUTHENTICATED);
+
+		// Public: no Authorization header, the share uuid in the path IS the credential.
+		$public = new PublicShareApi();
+		$this->Add("GET", "shared/:uuid", $public, "Get", self::OPEN);
+		$this->Add("GET", "shared/:uuid/folder/:folder_uuid", $public, "GetFolder", self::OPEN);
 	}
 
 	private function GeneralApis() {

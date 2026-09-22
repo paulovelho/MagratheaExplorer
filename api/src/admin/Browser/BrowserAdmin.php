@@ -10,6 +10,7 @@ use MagratheaExplorer\File\FileControl;
 use MagratheaExplorer\Folder\FolderControl;
 use MagratheaExplorer\Key\Key;
 use MagratheaExplorer\Key\KeyControl;
+use MagratheaExplorer\Share\ShareControl;
 use MagratheaExplorer\Storage\StorageFactory;
 
 /**
@@ -58,6 +59,7 @@ class BrowserAdmin extends AdminFeature implements iAdminFeature {
 			$folder = FolderControl::GetForKey($key, (int)$id);
 			FolderControl::AssertNotRoot($folder);
 			FolderControl::AssertEmpty($folder);
+			ShareControl::DeleteForFolder((int)$folder->id);
 			$folder->Delete();
 			AdminManager::Instance()->Log("folder deleted via browser", $folder->name);
 		}
@@ -84,6 +86,9 @@ class BrowserAdmin extends AdminFeature implements iAdminFeature {
 			$file = new \MagratheaExplorer\File\File($id);
 			$key = new Key($file->key_id);
 			\MagratheaExplorer\File\FileTagControl::DetachAllForFile((int)$file->id);
+			// Raw row delete, bypassing FileControl entirely -- so it needs its own share
+			// cleanup rather than inheriting DeleteFileAndStorage()'s.
+			ShareControl::DeleteForFile((int)$file->id);
 			$file->Delete();
 			$key->AdjustSize(-1 * (int)$file->size);
 			AdminManager::Instance()->Log("orphan file row purged", $file->name);

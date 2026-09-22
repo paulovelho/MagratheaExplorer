@@ -10,7 +10,9 @@ use Magrathea2\MagratheaModel;
 
 class KeyBase extends MagratheaModel implements iMagratheaModel {
 
-	public $id, $uuid, $name, $uses, $usage_limit, $total_size, $usage_limit_mb, $expiration, $active;
+	// hand-edited: added $storage_uuid (see MagratheaStart() below) -- regenerating
+	// through the admin drops this line and breaks inserts against the NOT NULL column.
+	public $id, $uuid, $storage_uuid, $name, $uses, $usage_limit, $total_size, $usage_limit_mb, $expiration, $active;
 	public $created_at, $updated_at;
 	protected $autoload = null;
 
@@ -27,6 +29,11 @@ class KeyBase extends MagratheaModel implements iMagratheaModel {
 		$this->dbPk = "id";
 		$this->dbValues["id"] = "int";
 		$this->dbValues["uuid"] = "uuid";
+		// hand-edited: declared "uuid" so Insert() mints it too (see MagratheaModel.php's
+		// CreateInsertQuery()). Separate from `uuid` above -- that one is the bearer
+		// credential and must never appear in a URL; this one is the public, non-secret
+		// storage directory name and goes into URLs freely.
+		$this->dbValues["storage_uuid"] = "uuid";
 		$this->dbValues["name"] = "string";
 		$this->dbValues["uses"] = "int";
 		$this->dbValues["usage_limit"] = "int";

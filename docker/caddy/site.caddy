@@ -62,6 +62,9 @@ platypusweb.com.br {
 		root * /var/www/storage
 		@download `{http.request.uri.query.filename} != ''`
 		header @download Content-Disposition "{http.request.uri.query.disposition}; filename=\"{http.request.uri.query.filename}\""
+		# The storage root now has one directory per key -- file_server doesn't list
+		# directories by default, so there's no Options -Indexes equivalent needed here
+		# (unlike api/storage/.htaccess, which has to set it explicitly for Apache).
 		file_server
 	}
 

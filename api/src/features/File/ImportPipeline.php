@@ -28,7 +28,7 @@ class ImportPipeline {
 
 		$stats = ["folders_touched" => 0, "files_imported" => 0, "files_skipped" => [], "bytes_imported" => 0];
 
-		$rootFolder = FolderControl::GetOrCreate($key, $destinationParent->id, $rootName);
+		$rootFolder = FolderControl::GetOrCreate($key, $destinationParent, $rootName);
 		$stats["folders_touched"]++;
 
 		self::ImportDirectory($key, $rootFolder, $sourcePath, $enforceQuota, $stats);
@@ -47,7 +47,7 @@ class ImportPipeline {
 			if(is_link($fullPath)) continue;
 
 			if(is_dir($fullPath)) {
-				$childFolder = FolderControl::GetOrCreate($key, $folder->id, $entry);
+				$childFolder = FolderControl::GetOrCreate($key, $folder, $entry);
 				$stats["folders_touched"]++;
 				self::ImportDirectory($key, $childFolder, $fullPath, $enforceQuota, $stats);
 			} elseif(is_file($fullPath)) {

@@ -12,6 +12,8 @@ class Key extends \MagratheaExplorer\Key\Base\KeyBase {
 	 * whether the PHP property was ever set -- it does NOT fall back to the column's
 	 * SQL DEFAULT for an unset property. So every field with a non-null-ish default
 	 * (including `active`) must be defaulted here explicitly, not just left unset.
+	 * `uuid`/`storage_uuid` need no line here -- both are declared "uuid" in
+	 * KeyBase::MagratheaStart(), so Insert() mints them itself when left unset.
 	 */
 	public function Normalize(): Key {
 		if(!$this->uses) $this->uses = 0;
@@ -21,6 +23,16 @@ class Key extends \MagratheaExplorer\Key\Base\KeyBase {
 		if(empty($this->expiration)) $this->expiration = null;
 		if($this->active === null || $this->active === "") $this->active = 1;
 		return $this;
+	}
+
+	/** Public, non-secret directory this key's objects live under -- never `uuid`, which is the bearer credential. */
+	public function StorageDir(): string {
+		return $this->storage_uuid;
+	}
+
+	/** The one place a storage path is assembled, for both a file and its thumbnail. */
+	public function StoragePathFor(string $token, string $extension): string {
+		return $this->storage_uuid."/".$token.".".$extension;
 	}
 
 	/**

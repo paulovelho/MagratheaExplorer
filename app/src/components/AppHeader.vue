@@ -29,8 +29,13 @@ function logout() {
 
 <template>
   <header class="app-header">
-    <h1>Magrathea Explorer</h1>
+    <!-- A link, not plain text: /app/shares is a full page of its own, so the title is
+         the way back to the file list from it. -->
+    <router-link :to="{ name: 'explorer', params: {} }" class="title">
+      <h1>Magrathea Explorer</h1>
+    </router-link>
     <div class="right">
+      <router-link :to="{ name: 'shares' }" class="nav-link">Shared links</router-link>
       <span v-if="usageLabel" class="usage">{{ usageLabel }}</span>
       <button class="logout" @click="logout">Log out</button>
     </div>
@@ -47,6 +52,11 @@ function logout() {
   border-bottom: 1px solid #e0e0e0;
 }
 
+.title {
+  color: inherit;
+  text-decoration: none;
+}
+
 h1 {
   font-size: 1.1rem;
   margin: 0;
@@ -56,6 +66,16 @@ h1 {
   display: flex;
   align-items: center;
   gap: 1rem;
+}
+
+.nav-link {
+  font-size: 0.85rem;
+  color: #2d6cdf;
+  text-decoration: none;
+}
+
+.nav-link:hover {
+  text-decoration: underline;
 }
 
 .usage {

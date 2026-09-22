@@ -8,9 +8,16 @@ const props = defineProps({
   files: { type: Array, required: true },
 })
 
-const emit = defineEmits(['open-folder', 'rename-folder', 'delete-folder', 'rename-file', 'delete-file'])
+const emit = defineEmits([
+  'open-folder',
+  'rename-folder',
+  'delete-folder',
+  'rename-file',
+  'delete-file',
+  'share',
+])
 
-const editingKey = ref(null) // `folder:5` or `file:12`
+const editingKey = ref(null) // `folder:{uuid}` or `file:{uuid}`
 const editValue = ref('')
 const confirmDeleteKey = ref(null)
 
@@ -25,7 +32,7 @@ const vFocus = {
 }
 
 function startRename(kind, item) {
-  editingKey.value = `${kind}:${item.id}`
+  editingKey.value = `${kind}:${item.uuid}`
   editValue.value = item.name
   confirmDeleteKey.value = null
 }
@@ -38,7 +45,7 @@ function submitRename(kind, item) {
   // Guards against a double-submit: pressing Enter hides the input, and
   // removing a focused element fires a native blur, re-invoking this via
   // @blur with the same stale value.
-  const key = `${kind}:${item.id}`
+  const key = `${kind}:${item.uuid}`
   if (editingKey.value !== key) return
   editingKey.value = null
   const name = editValue.value.trim()
@@ -47,7 +54,7 @@ function submitRename(kind, item) {
 }
 
 function askDelete(kind, item) {
-  confirmDeleteKey.value = `${kind}:${item.id}`
+  confirmDeleteKey.value = `${kind}:${item.uuid}`
   editingKey.value = null
 }
 
@@ -59,6 +66,12 @@ function confirmDelete(kind, item) {
 function cancelDelete() {
   confirmDeleteKey.value = null
 }
+
+function startShare(kind, item) {
+  editingKey.value = null
+  confirmDeleteKey.value = null
+  emit('share', kind, item)
+}
 </script>
 
 <template>
@@ -69,13 +82,13 @@ function cancelDelete() {
 
     <div
       v-for="folder in folders"
-      :key="`folder:${folder.id}`"
+      :key="`folder:${folder.uuid}`"
       class="row"
     >
       <button class="name-cell" @click="emit('open-folder', folder)">
         <span class="icon">{{ FOLDER_ICON }}</span>
         <input
-          v-if="editingKey === `folder:${folder.id}`"
+          v-if="editingKey === `folder:${folder.uuid}`"
           v-model="editValue"
           v-focus
           class="rename-input"
@@ -89,12 +102,13 @@ function cancelDelete() {
       <span class="meta">—</span>
       <span class="meta">{{ formatDate(folder.created_at) }}</span>
       <div class="actions">
-        <template v-if="confirmDeleteKey === `folder:${folder.id}`">
+        <template v-if="confirmDeleteKey === `folder:${folder.uuid}`">
           <span class="confirm-text">Delete?</span>
           <button class="link danger" @click="confirmDelete('folder', folder)">Yes</button>
           <button class="link" @click="cancelDelete">No</button>
         </template>
         <template v-else>
+          <button class="link" @click="startShare('folder', folder)">Share</button>
           <button class="link" @click="startRename('folder', folder)">Rename</button>
           <button class="link danger" @click="askDelete('folder', folder)">Delete</button>
         </template>
@@ -103,14 +117,14 @@ function cancelDelete() {
 
     <div
       v-for="file in files"
-      :key="`file:${file.id}`"
+      :key="`file:${file.uuid}`"
       class="row"
     >
       <a class="name-cell" :href="file.url" target="_blank" rel="noopener">
         <img v-if="file.thumbnail_url" :src="file.thumbnail_url" class="thumb" alt="" />
         <span v-else class="icon">{{ getFileIcon(file) }}</span>
         <input
-          v-if="editingKey === `file:${file.id}`"
+          v-if="editingKey === `file:${file.uuid}`"
           v-model="editValue"
           v-focus
           class="rename-input"
@@ -124,12 +138,13 @@ function cancelDelete() {
       <span class="meta">{{ formatBytes(file.size) }}</span>
       <span class="meta">{{ formatDate(file.created_at) }}</span>
       <div class="actions">
-        <template v-if="confirmDeleteKey === `file:${file.id}`">
+        <template v-if="confirmDeleteKey === `file:${file.uuid}`">
           <span class="confirm-text">Delete?</span>
           <button class="link danger" @click="confirmDelete('file', file)">Yes</button>
           <button class="link" @click="cancelDelete">No</button>
         </template>
         <template v-else>
+          <button class="link" @click.prevent="startShare('file', file)">Share</button>
           <button class="link" @click.prevent="startRename('file', file)">Rename</button>
           <button class="link danger" @click.prevent="askDelete('file', file)">Delete</button>
         </template>
@@ -152,7 +167,7 @@ function cancelDelete() {
 
 .row {
   display: grid;
-  grid-template-columns: 1fr 90px 160px 150px;
+  grid-template-columns: 1fr 90px 160px 200px;
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 1.5rem;

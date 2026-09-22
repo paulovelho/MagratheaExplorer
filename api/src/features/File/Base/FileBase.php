@@ -10,8 +10,12 @@ use Magrathea2\MagratheaModel;
 
 class FileBase extends MagratheaModel implements iMagratheaModel {
 
-	public $id, $token, $thumbnail_token, $key_id, $folder_id, $name, $storage_path;
+	// hand-edited: added $uuid and $thumbnail_path (see MagratheaStart() below) --
+	// regenerating through the admin drops these lines and breaks inserts against the
+	// NOT NULL `uuid` column.
+	public $id, $uuid, $token, $thumbnail_token, $key_id, $folder_id, $name, $storage_path;
 	public $extension, $mime_type, $file_type, $size, $width, $height, $duration, $no_convert;
+	public $thumbnail_path;
 	public $created_at, $updated_at;
 	protected $autoload = null;
 
@@ -27,6 +31,10 @@ class FileBase extends MagratheaModel implements iMagratheaModel {
 		$this->dbTable = "files";
 		$this->dbPk = "id";
 		$this->dbValues["id"] = "int";
+		// hand-edited: declared "uuid" so Insert() mints it automatically (see
+		// MagratheaModel.php's CreateInsertQuery()) -- this is the public identity of
+		// the file, the int $id above stays internal-only.
+		$this->dbValues["uuid"] = "uuid";
 		$this->dbValues["token"] = "string";
 		$this->dbValues["thumbnail_token"] = "string";
 		$this->dbValues["key_id"] = "int";
@@ -41,6 +49,10 @@ class FileBase extends MagratheaModel implements iMagratheaModel {
 		$this->dbValues["height"] = "int";
 		$this->dbValues["duration"] = "int";
 		$this->dbValues["no_convert"] = "boolean";
+		// hand-edited: storage path of the thumbnail object, explicitly `null` when there
+		// is no thumbnail -- Insert() writes every declared field regardless of whether
+		// the PHP property was ever set, so this must be set to null, not left unset.
+		$this->dbValues["thumbnail_path"] = "string";
 		$this->dbValues["created_at"] = "datetime";
 		$this->dbValues["updated_at"] = "datetime";
 

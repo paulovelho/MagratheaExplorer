@@ -9,6 +9,7 @@ use Magrathea2\Admin\AdminMenu;
 use Magrathea2\Admin\Features\ApiExplorer\ApiExplorer;
 use MagratheaExplorer\Key\KeyAdmin;
 use MagratheaExplorer\Key\ScheduledDeletionAdmin;
+use MagratheaExplorer\Share\ShareAdmin;
 
 class MagratheaExplorerAdmin extends Admin implements \Magrathea2\Admin\iAdmin {
 
@@ -42,6 +43,7 @@ class MagratheaExplorerAdmin extends Admin implements \Magrathea2\Admin\iAdmin {
 		$this->features["storage"] = new StorageAdmin();
 		$this->features["import"] = new ImportAdmin();
 		$this->features["duplicates"] = new DuplicatesAdmin();
+		$this->features["share"] = new ShareAdmin();
 		$this->AddFeaturesArray($this->features);
 	}
 
@@ -51,6 +53,7 @@ class MagratheaExplorerAdmin extends Admin implements \Magrathea2\Admin\iAdmin {
 			->Add($this->features["browser"]->GetMenuItem())
 			->Add($this->features["import"]->GetMenuItem())
 			->Add($this->features["duplicates"]->GetMenuItem())
+			->Add($this->features["share"]->GetMenuItem())
 			->Add($this->features["key"]->GetMenuItem())
 			->Add($this->features["scheduled-deletion"]->GetMenuItem())
 			->Add($this->features["storage"]->GetMenuItem())

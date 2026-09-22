@@ -5,6 +5,7 @@ import AppHeader from '../components/AppHeader.vue'
 import Breadcrumbs from '../components/Breadcrumbs.vue'
 import FileList from '../components/FileList.vue'
 import UploadZone from '../components/UploadZone.vue'
+import ShareDialog from '../components/ShareDialog.vue'
 import { useBreadcrumbs } from '../composables/useBreadcrumbs'
 import { useKeyUsage } from '../composables/useKeyUsage'
 import { fetchFolders, createFolder, renameFolder, deleteFolder } from '../api/folders'
@@ -12,17 +13,16 @@ import { fetchFiles, renameFile, deleteFile } from '../api/files'
 import { ApiError } from '../api/client'
 
 const props = defineProps({
-  id: { type: String, default: undefined },
+  uuid: { type: String, default: undefined },
 })
 
 const router = useRouter()
 const { path, push: pushBreadcrumb, popTo, syncTo } = useBreadcrumbs()
 const { refresh: refreshUsage } = useKeyUsage()
 
-// vue-router resolves the omitted optional :id? segment to '' (not
-// undefined) here, so both must map to root -- otherwise Number('') = 0
-// sends real requests for a folder id that can never exist.
-const folderId = computed(() => (props.id ? Number(props.id) : null))
+// vue-router resolves the omitted optional :uuid? segment to '' (not
+// undefined) here, so both must map to root.
+const folderUuid = computed(() => props.uuid || null)
 
 const folders = ref([])
 const files = ref([])
@@ -31,6 +31,9 @@ const errorMessage = ref('')
 
 const creatingFolder = ref(false)
 const newFolderName = ref('')
+
+// { kind: 'folder'|'file', item } while the share dialog is open, null otherwise.
+const shareTarget = ref(null)
 
 // The `autofocus` HTML attribute only fires on the initial page parse, not
 // when Vue inserts the element into an already-mounted page (e.g. this
@@ -44,8 +47,8 @@ async function loadContents() {
   errorMessage.value = ''
   try {
     const [folderList, fileList] = await Promise.all([
-      fetchFolders(folderId.value ?? undefined),
-      fetchFiles(folderId.value ?? undefined),
+      fetchFolders(folderUuid.value ?? undefined),
+      fetchFiles(folderUuid.value ?? undefined),
     ])
     folders.value = [...folderList].sort((a, b) => a.name.localeCompare(b.name))
     files.value = [...fileList].sort((a, b) => a.name.localeCompare(b.name))
@@ -57,29 +60,29 @@ async function loadContents() {
 }
 
 async function load() {
-  await syncTo(folderId.value)
+  await syncTo(folderUuid.value)
   await loadContents()
 }
 
-watch(folderId, load, { immediate: true })
+watch(folderUuid, load, { immediate: true })
 
 function openFolder(folder) {
   pushBreadcrumb(folder)
-  router.push({ name: 'explorer', params: { id: String(folder.id) } })
+  router.push({ name: 'explorer', params: { uuid: folder.uuid } })
 }
 
 function navigateBreadcrumb(crumb, index) {
   popTo(index)
-  if (crumb.id == null) {
+  if (crumb.uuid == null) {
     router.push({ name: 'explorer', params: {} })
   } else {
-    router.push({ name: 'explorer', params: { id: String(crumb.id) } })
+    router.push({ name: 'explorer', params: { uuid: crumb.uuid } })
   }
 }
 
 async function handleRenameFolder(folder, name) {
   try {
-    await renameFolder(folder.id, name)
+    await renameFolder(folder.uuid, name)
     await loadContents()
   } catch (err) {
     errorMessage.value = err.message || 'Failed to rename folder.'
@@ -88,7 +91,7 @@ async function handleRenameFolder(folder, name) {
 
 async function handleDeleteFolder(folder) {
   try {
-    await deleteFolder(folder.id)
+    await deleteFolder(folder.uuid)
     await loadContents()
   } catch (err) {
     if (err instanceof ApiError && err.status === 400) {
@@ -101,7 +104,7 @@ async function handleDeleteFolder(folder) {
 
 async function handleRenameFile(file, name) {
   try {
-    await renameFile(file.id, name)
+    await renameFile(file.uuid, name)
     await loadContents()
   } catch (err) {
     errorMessage.value = err.message || 'Failed to rename file.'
@@ -110,7 +113,7 @@ async function handleRenameFile(file, name) {
 
 async function handleDeleteFile(file) {
   try {
-    await deleteFile(file.id)
+    await deleteFile(file.uuid)
     await loadContents()
     refreshUsage()
   } catch (err) {
@@ -132,11 +135,15 @@ async function submitNewFolder() {
   const name = newFolderName.value.trim()
   if (!name) return
   try {
-    await createFolder(name, folderId.value ?? undefined)
+    await createFolder(name, folderUuid.value ?? undefined)
     await loadContents()
   } catch (err) {
     errorMessage.value = err.message || 'Failed to create folder.'
   }
+}
+
+function openShare(kind, item) {
+  shareTarget.value = { kind, item }
 }
 
 function onUploaded() {
@@ -167,7 +174,7 @@ function onUploaded() {
 
     <p v-if="errorMessage" class="error-banner">{{ errorMessage }}</p>
 
-    <UploadZone :folder-id="folderId" @uploaded="onUploaded" />
+    <UploadZone :folder-id="folderUuid" @uploaded="onUploaded" />
 
     <p v-if="loading" class="loading">Loading…</p>
     <FileList
@@ -179,6 +186,14 @@ function onUploaded() {
       @delete-folder="handleDeleteFolder"
       @rename-file="handleRenameFile"
       @delete-file="handleDeleteFile"
+      @share="openShare"
+    />
+
+    <ShareDialog
+      v-if="shareTarget"
+      :kind="shareTarget.kind"
+      :item="shareTarget.item"
+      @close="shareTarget = null"
     />
   </div>
 </template>

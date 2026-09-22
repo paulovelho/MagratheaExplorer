@@ -1,6 +1,6 @@
 <script setup>
 defineProps({
-  path: { type: Array, required: true }, // [{ id, name }]
+  path: { type: Array, required: true }, // [{ uuid, name }]
 })
 
 const emit = defineEmits(['navigate'])
@@ -8,7 +8,7 @@ const emit = defineEmits(['navigate'])
 
 <template>
   <nav class="breadcrumbs">
-    <template v-for="(crumb, index) in path" :key="crumb.id ?? 'root'">
+    <template v-for="(crumb, index) in path" :key="crumb.uuid ?? 'root'">
       <span v-if="index > 0" class="sep">/</span>
       <button
         class="crumb"

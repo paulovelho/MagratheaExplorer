@@ -72,4 +72,9 @@ class LocalStorageAdapter implements StorageAdapter {
 		return file_exists($this->fullPath($path));
 	}
 
+	/** Never recursive -- only removes the directory when it's already empty. */
+	public function removeDirectory(string $path): void {
+		@rmdir($this->fullPath($path));
+	}
+
 }

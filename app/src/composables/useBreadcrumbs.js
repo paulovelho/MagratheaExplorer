@@ -3,14 +3,14 @@ import { fetchFolder } from '../api/folders'
 
 // Module-level so the path stack survives across ExplorerView re-renders
 // within the same session, not just within one component instance.
-const path = ref([]) // [{ id: null, name: 'Root' }, { id: 5, name: 'Photos' }, ...]
+const path = ref([]) // [{ uuid: null, name: 'Root' }, { uuid: '018f2a3b-...', name: 'Photos' }, ...]
 
 /**
- * Descend into a known child folder (id + name already in hand from the
+ * Descend into a known child folder (uuid + name already in hand from the
  * current listing) -- no API call needed.
  */
 function push(folder) {
-  path.value = [...path.value, { id: folder.id, name: folder.name }]
+  path.value = [...path.value, { uuid: folder.uuid, name: folder.name }]
 }
 
 /**
@@ -21,47 +21,47 @@ function popTo(index) {
 }
 
 function reset() {
-  path.value = [{ id: null, name: 'Root' }]
+  path.value = [{ uuid: null, name: 'Root' }]
 }
 
 /**
- * Rebuild the stack by walking parent_id up to root via GET /folder/{id}.
+ * Rebuild the stack by walking parent_uuid up to root via GET /folder/{uuid}.
  * Only needed for a direct load / refresh where the client has no prior
  * navigation history for this folder.
  */
-async function rebuild(folderId) {
-  if (folderId == null) {
+async function rebuild(folderUuid) {
+  if (folderUuid == null) {
     reset()
     return
   }
   const ancestors = []
-  let currentId = folderId
-  while (currentId != null) {
-    const folder = await fetchFolder(currentId)
-    // The real root folder row is represented by the synthetic { id: null,
+  let currentUuid = folderUuid
+  while (currentUuid != null) {
+    const folder = await fetchFolder(currentUuid)
+    // The real root folder row is represented by the synthetic { uuid: null,
     // name: 'Root' } crumb below, not by its own (implementation-detail)
     // name -- stop without adding it as a separate ancestor.
     if (folder.is_root) break
-    ancestors.unshift({ id: folder.id, name: folder.name })
-    currentId = folder.parent_id
+    ancestors.unshift({ uuid: folder.uuid, name: folder.name })
+    currentUuid = folder.parent_uuid
   }
-  path.value = [{ id: null, name: 'Root' }, ...ancestors]
+  path.value = [{ uuid: null, name: 'Root' }, ...ancestors]
 }
 
 /**
- * Ensure the stack's tail matches folderId -- reuses the existing stack if
+ * Ensure the stack's tail matches folderUuid -- reuses the existing stack if
  * it already ends there (breadcrumb/back navigation), otherwise falls back
  * to rebuild().
  */
-async function syncTo(folderId) {
+async function syncTo(folderUuid) {
   const tail = path.value[path.value.length - 1]
-  if (tail && tail.id === (folderId ?? null)) return
-  const idx = path.value.findIndex((p) => p.id === (folderId ?? null))
+  if (tail && tail.uuid === (folderUuid ?? null)) return
+  const idx = path.value.findIndex((p) => p.uuid === (folderUuid ?? null))
   if (idx !== -1) {
     popTo(idx)
     return
   }
-  await rebuild(folderId)
+  await rebuild(folderUuid)
 }
 
 export function useBreadcrumbs() {

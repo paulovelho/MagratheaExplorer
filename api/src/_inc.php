@@ -14,7 +14,7 @@ try {
 			"shared",
 			"error-manager",
 		)
-		->AddFeature("Key", "Folder", "File", "Storage")
+		->AddFeature("Key", "Folder", "File", "Storage", "Share")
 		->Load();
 } catch(Exception $ex) {
 	\Magrathea2\p_r($ex);

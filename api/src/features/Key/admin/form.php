@@ -26,6 +26,7 @@ if($key === null) {
 							<? if($key->id): ?>
 								<div class="col-2"><? $elements->Input("disabled", "id", "#ID", $key->id); ?></div>
 								<div class="col-3"><? $elements->Input("disabled", "uuid_display", "UUID", $key->uuid); ?></div>
+								<div class="col-3"><? $elements->Input("disabled", "storage_uuid_display", "Storage dir (public)", $key->storage_uuid); ?></div>
 								<input type="hidden" name="id" value="<?=$key->id?>">
 							<? endif; ?>
 							<div class="col-3"><? $elements->Input("text", "name", "Name", $key->name); ?></div>

@@ -4,7 +4,7 @@ info:
   description: >
     Self-hosted file hosting API (images/audio/video/documents/other), obfuscated URLs,
     pluggable local/S3/R2 storage. Every authenticated route takes `Authorization: Bearer <key-uuid>`.
-  version: "1.1.0"
+  version: "1.3.0"
 servers:
   - url: /api/v1
 
@@ -29,16 +29,16 @@ components:
     Folder:
       type: object
       properties:
-        id: { type: integer }
-        parent_id: { type: integer, nullable: true }
+        uuid: { type: string, format: uuid }
+        parent_uuid: { type: string, format: uuid, nullable: true }
         name: { type: string }
         is_root: { type: boolean }
         created_at: { type: string, format: date-time }
     File:
       type: object
       properties:
-        id: { type: integer }
-        folder_id: { type: integer }
+        uuid: { type: string, format: uuid }
+        folder_uuid: { type: string, format: uuid }
         name: { type: string }
         extension: { type: string }
         mime_type: { type: string }
@@ -52,6 +52,71 @@ components:
         thumbnail_url: { type: string, nullable: true }
         tags: { type: array, items: { type: string } }
         created_at: { type: string, format: date-time }
+    Share:
+      type: object
+      description: Owner-facing view of one share link. No `id` -- int ids are not exposed anywhere in this API.
+      properties:
+        uuid: { type: string, format: uuid, description: "The link secret AND the row's public identity -- holding it is the access check." }
+        url: { type: string, description: "app_url + /app/s/{uuid}, assembled per request rather than stored" }
+        target_type: { type: string, enum: [file, folder] }
+        target_name: { type: string, description: "A shared root folder reports as \"All files\", never the literal row name \"root\"." }
+        file_uuid: { type: string, format: uuid, nullable: true }
+        folder_uuid: { type: string, format: uuid, nullable: true }
+        views: { type: integer }
+        last_viewed_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+    SharedFile:
+      type: object
+      description: >
+        A strict subset of File, returned on the public share routes. Drops `folder_uuid`,
+        `no_convert` and `tags`. `url` is the same direct-from-storage link the owner gets --
+        deleting the share stops the share page but not that URL.
+      properties:
+        uuid: { type: string, format: uuid }
+        name: { type: string }
+        extension: { type: string }
+        mime_type: { type: string }
+        file_type: { type: string, enum: [image, audio, video, document, other] }
+        size: { type: integer }
+        width: { type: integer, nullable: true }
+        height: { type: integer, nullable: true }
+        duration: { type: integer, nullable: true }
+        url: { type: string }
+        thumbnail_url: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+    SharedFolder:
+      type: object
+      description: One folder inside a share. `path` starts at the share root and never includes a folder above it.
+      properties:
+        type: { type: string, enum: [folder] }
+        name: { type: string }
+        path:
+          type: array
+          description: Breadcrumb from the share root (index 0) down to the folder being viewed.
+          items:
+            type: object
+            properties:
+              uuid: { type: string, format: uuid }
+              name: { type: string }
+        folders:
+          type: array
+          items:
+            type: object
+            properties:
+              uuid: { type: string, format: uuid }
+              name: { type: string }
+        files:
+          type: array
+          items: { $ref: "#/components/schemas/SharedFile" }
+    PublicShare:
+      description: What a public share route returns -- a single file, or one folder's listing.
+      oneOf:
+        - $ref: "#/components/schemas/SharedFolder"
+        - type: object
+          properties:
+            type: { type: string, enum: [file] }
+            name: { type: string }
+            file: { $ref: "#/components/schemas/SharedFile" }
     Error:
       type: object
       properties:
@@ -114,9 +179,9 @@ paths:
 
   /folders:
     get:
-      summary: List the direct children of ?parent_id=, or the key's root folder's children when omitted
+      summary: List the direct children of ?parent_uuid=, or the key's root folder's children when omitted
       parameters:
-        - { name: parent_id, in: query, schema: { type: integer } }
+        - { name: parent_uuid, in: query, schema: { type: string, format: uuid } }
       responses:
         "200":
           description: OK
@@ -130,12 +195,12 @@ paths:
               type: object
               properties:
                 name: { type: string }
-                parent_id: { type: integer, description: "defaults to the key's root folder" }
+                parent_uuid: { type: string, format: uuid, description: "defaults to the key's root folder" }
               required: [name]
       responses: { "200": { description: Created } }
 
-  /folder/{id}:
-    parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+  /folder/{uuid}:
+    parameters: [{ name: uuid, in: path, required: true, schema: { type: string, format: uuid } }]
     get:
       summary: Get one folder
       responses:
@@ -150,17 +215,17 @@ paths:
         "200": { description: Deleted }
         "400": { description: Folder not empty, or is a root folder }
 
-  /folder/{id}/size:
+  /folder/{uuid}/size:
     get:
       summary: Recursive subtree byte total
-      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      parameters: [{ name: uuid, in: path, required: true, schema: { type: string, format: uuid } }]
       responses: { "200": { description: OK } }
 
   /files:
     get:
-      summary: List files in ?folder_id=, or the key's root folder when omitted
+      summary: List files in ?folder_uuid=, or the key's root folder when omitted
       parameters:
-        - { name: folder_id, in: query, schema: { type: integer, description: "defaults to the key's root folder" } }
+        - { name: folder_uuid, in: query, schema: { type: string, format: uuid, description: "defaults to the key's root folder" } }
         - { name: file_type, in: query, schema: { type: string, enum: [image, audio, video, document, other] } }
         - { name: tag, in: query, schema: { type: string } }
       responses:
@@ -176,7 +241,7 @@ paths:
               type: object
               properties:
                 file: { type: string, format: binary }
-                folder_id: { type: integer, description: "defaults to the key's root folder" }
+                folder_uuid: { type: string, format: uuid, description: "defaults to the key's root folder" }
                 no_convert: { type: boolean, description: "images only: skip webp conversion (metadata is always stripped regardless)" }
                 tags: { type: string, description: comma-separated tag names }
               required: [file]
@@ -186,8 +251,8 @@ paths:
         "415": { description: Unsupported or dangerous file type }
         "403": { description: Upload count or storage size limit reached }
 
-  /file/{id}:
-    parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+  /file/{uuid}:
+    parameters: [{ name: uuid, in: path, required: true, schema: { type: string, format: uuid } }]
     get:
       summary: Get one file
       responses: { "200": { description: OK }, "404": { description: Not found } }
@@ -198,20 +263,90 @@ paths:
       summary: Delete a file from storage and the database
       responses: { "200": { description: Deleted } }
 
-  /file/{id}/tags:
+  /file/{uuid}/tags:
     post:
       summary: Attach a tag (created if it doesn't exist)
-      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      parameters: [{ name: uuid, in: path, required: true, schema: { type: string, format: uuid } }]
       requestBody:
         content:
           application/x-www-form-urlencoded:
             schema: { type: object, properties: { name: { type: string } }, required: [name] }
       responses: { "200": { description: OK } }
 
-  /file/{id}/tags/{tag}:
+  /file/{uuid}/tags/{tag}:
     delete:
       summary: Detach a tag by name
       parameters:
-        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: uuid, in: path, required: true, schema: { type: string, format: uuid } }
         - { name: tag, in: path, required: true, schema: { type: string } }
       responses: { "200": { description: OK } }
+
+  /shares:
+    get:
+      summary: Every share link this key owns, newest first
+      parameters:
+        - { name: file_uuid, in: query, schema: { type: string, format: uuid }, description: "narrow to one file's links" }
+        - { name: folder_uuid, in: query, schema: { type: string, format: uuid }, description: "narrow to one folder's links" }
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Share" } } } }
+    post:
+      summary: Mint a share link for one file or one folder
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              description: Exactly one of the two -- both or neither is a 4001.
+              properties:
+                file_uuid: { type: string, format: uuid }
+                folder_uuid: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Created
+          content: { application/json: { schema: { $ref: "#/components/schemas/Share" } } }
+        "400": { description: "Both or neither target given (4001)" }
+        "404": { description: "Target not found, or belongs to another key (4042/4043)" }
+
+  /share/{uuid}:
+    delete:
+      summary: Delete a share link
+      description: >
+        Stops the share page working. Direct storage URLs for the shared files that someone
+        already copied keep working -- only deleting the file itself stops those.
+      parameters: [{ name: uuid, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "200": { description: Deleted }
+        "404": { description: "Not found, or belongs to another key (4045)" }
+
+  /shared/{uuid}:
+    get:
+      summary: Open a share link (public -- no Authorization header)
+      description: >
+        The uuid in the path is the whole credential. An unknown uuid, a deleted share, or a
+        share whose key is inactive/expired/pending deletion all collapse to the same 4045, so
+        a visitor learns nothing about the owner's account state. Counts a view on success only.
+      security: []
+      parameters: [{ name: uuid, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/PublicShare" } } }
+        "404": { description: "This link is not valid (4045)" }
+
+  /shared/{uuid}/folder/{folder_uuid}:
+    get:
+      summary: Browse into a shared folder (public -- no Authorization header)
+      description: >
+        Clamped to the shared subtree: a folder outside it, above it, or belonging to another
+        key all return 4042, the same as one that doesn't exist. Only valid on a folder share.
+      security: []
+      parameters:
+        - { name: uuid, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: folder_uuid, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/SharedFolder" } } }
+        "404": { description: "Folder not found or outside this share (4042); link not valid (4045)" }

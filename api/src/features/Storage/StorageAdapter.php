@@ -33,4 +33,11 @@ interface StorageAdapter {
 
 	public function exists(string $path): bool;
 
+	/**
+	 * Best-effort cleanup of a now-empty key storage directory. Never throws for an
+	 * absent or non-empty directory -- called after a key's last file is deleted, where
+	 * failing to remove the (now-empty) directory is not worth failing the request over.
+	 */
+	public function removeDirectory(string $path): void;
+
 }

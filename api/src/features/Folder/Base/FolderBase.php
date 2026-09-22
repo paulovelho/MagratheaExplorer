@@ -10,7 +10,9 @@ use Magrathea2\MagratheaModel;
 
 class FolderBase extends MagratheaModel implements iMagratheaModel {
 
-	public $id, $key_id, $parent_id, $name;
+	// hand-edited: added $uuid (see MagratheaStart() below) -- regenerating through the
+	// admin drops this line and breaks inserts against the NOT NULL column.
+	public $id, $uuid, $key_id, $parent_id, $name;
 	public $created_at, $updated_at;
 	protected $autoload = null;
 
@@ -26,6 +28,10 @@ class FolderBase extends MagratheaModel implements iMagratheaModel {
 		$this->dbTable = "folders";
 		$this->dbPk = "id";
 		$this->dbValues["id"] = "int";
+		// hand-edited: declared "uuid" so Insert() mints it automatically (see
+		// MagratheaModel.php's CreateInsertQuery()) -- this is the public identity of
+		// the folder, the int $id above stays internal-only.
+		$this->dbValues["uuid"] = "uuid";
 		$this->dbValues["key_id"] = "int";
 		$this->dbValues["parent_id"] = "int";
 		$this->dbValues["name"] = "string";

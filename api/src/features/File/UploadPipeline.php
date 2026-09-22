@@ -96,13 +96,15 @@ class UploadPipeline {
 			// that name instead of the opaque {token}.{ext} storage key.
 			$dispositionType = File::DispositionTypeFor($fileType, $finalExtension);
 			$disposition = self::BuildDisposition($dispositionType, $uploadedFile["name"] ?? "upload");
-			$storagePath = $fileToken.".".$finalExtension;
+			$storagePath = $key->StoragePathFor($fileToken, $finalExtension);
+			// Computed once, before put(), and reused for both the put() and the row --
+			// null when there's no thumbnail (image processing declined to build one).
+			$thumbStoragePath = $thumbnailToken !== null ? $key->StoragePathFor($thumbnailToken, $thumbnailExtension) : null;
 
 			$storage = StorageFactory::Instance()->Get();
 			try {
 				$storage->put($storagePath, $finalPath, ["content_type" => $mimeType, "disposition" => $disposition]);
-				if($thumbnailPath !== null) {
-					$thumbStoragePath = $thumbnailToken.".".$thumbnailExtension;
+				if($thumbStoragePath !== null) {
 					$storage->put($thumbStoragePath, $thumbnailPath, [
 						"content_type" => self::$mimeByExtension[$thumbnailExtension] ?? "image/jpeg",
 						"disposition" => "inline",
@@ -113,6 +115,8 @@ class UploadPipeline {
 			}
 
 			$file = new File();
+			// $file->uuid is left unset -- FileBase declares it "uuid", so Insert() mints
+			// it (see MagratheaModel.php's CreateInsertQuery()).
 			$file->token = $fileToken;
 			$file->thumbnail_token = $thumbnailToken;
 			$file->key_id = $key->id;
@@ -127,6 +131,9 @@ class UploadPipeline {
 			$file->height = $height;
 			$file->duration = $duration;
 			$file->no_convert = $noConvert ? 1 : 0;
+			// Explicit null when absent -- Insert() writes every declared field regardless
+			// of whether the PHP property was ever set (see FileBase's dbValues comment).
+			$file->thumbnail_path = $thumbStoragePath;
 			$file->Insert();
 
 			$key->IncrementUses();

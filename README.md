@@ -15,7 +15,7 @@ codebase followed). This README is the practical "how do I run this" entry point
 |---|---|---|
 | Auth | private/public key pair | single bearer key (`Authorization: Bearer <uuid>`) |
 | File types | images only | image / audio / video / document / other |
-| URLs | `/image/{public_key}/{id}/...` — key and sequential id in every URL | `/{token}.{ext}` — random per-file token, no key, no id |
+| URLs | `/image/{public_key}/{id}/...` — key and sequential id in every URL | `/{key-storage-uuid}/{token}.{ext}` — one directory per key, random per-file token, no bearer key, no sequential id |
 | Resizing | on-demand `WxH`, disk-cached | fixed-size thumbnail, generated once at upload |
 | Storage | local disk (R2 is backup-only) | local, S3, or R2 as the *primary* path |
 | Key creation | `POST /key/create` + shared secret | admin panel only — no public endpoint |
@@ -45,7 +45,11 @@ for the machine-readable route contract.
    ```
    This includes both the framework's own `_magrathea_*` tables (users, config, logs,
    roles) and the project's own tables (`access_keys`, `folders`, `files`, `tags`,
-   `file_tags`, `scheduled_deletions`).
+   `file_tags`, `scheduled_deletions`, `shares`).
+
+   `database.sql` is the **fresh-install** schema. To upgrade an instance that is already
+   running, apply the files in `api/database/migrations/` instead — each is named for the
+   version it brings the schema up to (e.g. `1.3.0_shares.sql`).
 
    > Note: the primary key table is named `access_keys`, not `keys` — `KEYS` is a
    > reserved SQL keyword, and the framework doesn't backtick-quote table names in its
@@ -93,6 +97,24 @@ for the machine-readable route contract.
      symlink like `/app`, since `storage/` is a gitignored runtime directory, not a
      build artifact.
 
+   For the `local` driver, also copy `api/storage/.htaccess` into that `local_path`
+   directory on the server (it's excluded from `storage/`'s gitignore specifically so
+   it ships in the repo, but it has to physically live next to the uploaded files, not
+   under `api/src/`). It's what turns a download URL's `?disposition=&filename=` query
+   string into a real `Content-Disposition` response header, so downloads save as the
+   file's original name instead of its opaque `{token}.{ext}` storage key — see
+   `StorageAdapter::url()`. Requires `mod_headers` enabled alongside `mod_rewrite`
+   (both on by default on DreamHost and most shared hosts; `docker/Dockerfile` enables
+   both for the docker-compose dev stack). Caddy-fronted instances get the same
+   behavior from `docker/caddy/site.caddy`'s `/storage` block instead — no `.htaccess`
+   involved there.
+
+   `local_path` gets one subdirectory per key, named for that key's own (non-secret)
+   storage uuid — `{local_path}/{key-storage-uuid}/{token}.{ext}` — created on demand by
+   `LocalStorageAdapter::put()`, nothing to provision up front. The same `.htaccess` also
+   sets `Options -Indexes` at `local_path`'s root (inherited by every key subdirectory),
+   since a listing of one is now a complete inventory of that key's files.
+
 5. **First admin user**: visit `/admin.php` in a browser — with no admin users yet, it
    shows a first-run setup form to create one. This is the *only* way to create a key;
    there is no public key-creation endpoint (a deliberate difference from Images3 — see
@@ -112,8 +134,11 @@ api/                                        -> JSON API project (document root: 
   composer.json / composer.lock / vendor/  -> see note above
   version, changelog.md                    -> kept in sync on every version bump (see claude.md)
   configs/                                 -> magrathea.conf, storage.conf, magrathea_objects.conf
-  database/database.sql                    -> framework tables + project schema
+  database/database.sql                    -> framework tables + project schema (fresh installs)
+  database/migrations/                     -> per-version upgrade scripts for a running instance
   cache/, logs/, storage/                  -> runtime dirs (gitignored, mounted into the container)
+                                                storage/ holds one subdirectory per key
+                                                ({key-storage-uuid}/{token}.{ext}), driver-agnostic
   src/                                     -> served at /api/v1 (.htaccess enforces the prefix)
     _inc.php, index.php, admin.php,        -> entry points (admin.php stays unprefixed, e.g. /admin.php)
     api.php, cron.php
@@ -125,9 +150,20 @@ api/                                        -> JSON API project (document root: 
       Key/                                 -> Key, ScheduledDeletion, their admin pages
       Folder/                              -> Folder (virtual, nestable, per-key)
       File/                                -> File, Tag, and the whole upload pipeline
+      Share/                               -> Share links: owner API, public API, admin page
 app/                                        -> Vue 3 + Vite admin app source (see script/build.sh)
 dist/                                       -> app/'s build output, committed to git; served at /app
                                                 via api/src/app (a committed symlink to ../../dist)
+```
+
+Routes the app serves under `/app` (all client-side, resolved by `app/public/.htaccess`'s
+SPA fallback):
+
+```
+/app/folder/{folder-uuid}?          -> the file explorer (authenticated, key in localStorage)
+/app/shares                         -> "Shared links": every share link this key owns
+/app/s/{share-uuid}                 -> the PUBLIC share page: no key, no login, and no link
+/app/s/{share-uuid}/{folder-uuid}      back into /app or to the owner's identity
 ```
 
 ## Quick usage example
@@ -143,9 +179,14 @@ curl -X POST -H "Authorization: Bearer <key-uuid>" \
   https://your-host/api/v1/files
 
 # List files in a folder, or by type/tag
-curl -H "Authorization: Bearer <key-uuid>" "https://your-host/api/v1/files?folder_id=5"
+curl -H "Authorization: Bearer <key-uuid>" "https://your-host/api/v1/files?folder_uuid=<folder-uuid>"
 curl -H "Authorization: Bearer <key-uuid>" "https://your-host/api/v1/files?file_type=audio"
 curl -H "Authorization: Bearer <key-uuid>" "https://your-host/api/v1/files?tag=logo"
+
+# Share a folder, then open it with no credentials at all
+curl -X POST -H "Authorization: Bearer <key-uuid>" \
+  -d "folder_uuid=<folder-uuid>" https://your-host/api/v1/shares
+curl https://your-host/api/v1/shared/<share-uuid>
 ```
 
 Full route list, request/response shapes, and error codes: `docs/openapi.yaml` and

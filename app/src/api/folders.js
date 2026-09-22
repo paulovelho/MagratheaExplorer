@@ -1,24 +1,24 @@
 import { apiGet, apiPost, apiPut, apiDelete } from './client'
 
-export function fetchFolders(parentId) {
-  const qs = parentId != null ? `?parent_id=${encodeURIComponent(parentId)}` : ''
+export function fetchFolders(parentUuid) {
+  const qs = parentUuid != null ? `?parent_uuid=${encodeURIComponent(parentUuid)}` : ''
   return apiGet(`/folders${qs}`)
 }
 
-export function fetchFolder(id) {
-  return apiGet(`/folder/${id}`)
+export function fetchFolder(uuid) {
+  return apiGet(`/folder/${uuid}`)
 }
 
-export function createFolder(name, parentId) {
+export function createFolder(name, parentUuid) {
   const body = { name }
-  if (parentId != null) body.parent_id = parentId
+  if (parentUuid != null) body.parent_uuid = parentUuid
   return apiPost('/folders', body)
 }
 
-export function renameFolder(id, name) {
-  return apiPut(`/folder/${id}`, { name })
+export function renameFolder(uuid, name) {
+  return apiPut(`/folder/${uuid}`, { name })
 }
 
-export function deleteFolder(id) {
-  return apiDelete(`/folder/${id}`)
+export function deleteFolder(uuid) {
+  return apiDelete(`/folder/${uuid}`)
 }

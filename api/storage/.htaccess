@@ -17,3 +17,8 @@
 <IfModule mod_headers.c>
 	Header set Content-Disposition "%{DL_TYPE}e; filename=\"%{DL_NAME}e\"" env=DL_NAME
 </IfModule>
+
+# The storage root now has one directory per key (see plan.md's "UUID identity +
+# per-key storage" refactor) -- a directory listing of one is a complete inventory of
+# that key's files, so indexes are always off here regardless of the vhost default.
+Options -Indexes

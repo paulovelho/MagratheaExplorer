@@ -4,6 +4,7 @@ namespace MagratheaExplorer\File;
 
 use MagratheaExplorer\ErrorCodes;
 use MagratheaExplorer\ExplorerApiControl;
+use MagratheaExplorer\Folder\Folder;
 use MagratheaExplorer\Folder\FolderControl;
 use MagratheaExplorer\Storage\StorageFactory;
 
@@ -11,7 +12,7 @@ class FileApi extends ExplorerApiControl {
 
 	private static array $validFileTypes = ["image", "audio", "video", "document", "other"];
 
-	/** POST /files -- multipart upload. Fields: file (required), folder_id, no_convert, tags (comma-separated) */
+	/** POST /files -- multipart upload. Fields: file (required), folder_uuid, no_convert, tags (comma-separated) */
 	public function Upload(): array {
 		$key = $this->GetRequestKey();
 
@@ -26,8 +27,7 @@ class FileApi extends ExplorerApiControl {
 		}
 
 		$post = $this->GetPost() ?? $_POST;
-		$folderId = !empty($post["folder_id"]) ? (int)$post["folder_id"] : null;
-		$folder = $folderId !== null ? FolderControl::GetForKey($key, $folderId) : FolderControl::GetRoot($key);
+		$folder = !empty($post["folder_uuid"]) ? FolderControl::GetForKeyByUuid($key, (string)$post["folder_uuid"]) : FolderControl::GetRoot($key);
 		$noConvert = !empty($post["no_convert"]);
 		$tagNames = [];
 		if(!empty($post["tags"])) {
@@ -35,14 +35,14 @@ class FileApi extends ExplorerApiControl {
 		}
 
 		$file = UploadPipeline::Handle($key, $folder, $_FILES["file"], $noConvert, $tagNames);
-		return $this->FileView($file);
+		return $this->FileView($file, $folder);
 	}
 
-	/** GET /files -- filters: ?folder_id= (defaults to the key's root folder), ?file_type=, ?tag= */
+	/** GET /files -- filters: ?folder_uuid= (defaults to the key's root folder), ?file_type=, ?tag= */
 	public function GetAll(): array {
 		$key = $this->GetRequestKey();
-		$folderId = !empty($_GET["folder_id"]) ? (int)$_GET["folder_id"] : FolderControl::GetRoot($key)->id;
-		$conditions = ["`key_id` = ".(int)$key->id, "`folder_id` = ".$folderId];
+		$folder = !empty($_GET["folder_uuid"]) ? FolderControl::GetForKeyByUuid($key, (string)$_GET["folder_uuid"]) : FolderControl::GetRoot($key);
+		$conditions = ["`key_id` = ".(int)$key->id, "`folder_id` = ".(int)$folder->id];
 
 		if(!empty($_GET["file_type"])) {
 			if(!in_array($_GET["file_type"], self::$validFileTypes, true)) {
@@ -59,20 +59,20 @@ class FileApi extends ExplorerApiControl {
 			$files = array_values(array_filter($files, fn($f) => in_array((int)$f->id, $fileIds, true)));
 		}
 
-		return array_map([$this, "FileView"], $files);
+		return array_map(fn($file) => $this->FileView($file, $folder), $files);
 	}
 
-	/** GET /file/:id */
+	/** GET /file/:uuid */
 	public function Get($params): array {
 		$key = $this->GetRequestKey();
-		$file = FileControl::GetForKey($key, (int)$params["id"]);
+		$file = FileControl::GetForKeyByUuid($key, (string)$params["uuid"]);
 		return $this->FileView($file);
 	}
 
-	/** PUT /file/:id -- renames the display name only; reprocessing isn't supported */
+	/** PUT /file/:uuid -- renames the display name only; reprocessing isn't supported */
 	public function Update($params): array {
 		$key = $this->GetRequestKey();
-		$file = FileControl::GetForKey($key, (int)$params["id"]);
+		$file = FileControl::GetForKeyByUuid($key, (string)$params["uuid"]);
 		$data = $this->GetPut();
 		if(!empty($data["name"])) {
 			$file->name = trim($data["name"]);
@@ -81,28 +81,28 @@ class FileApi extends ExplorerApiControl {
 		return $this->FileView($file);
 	}
 
-	/** DELETE /file/:id -- deletes from storage (file + thumbnail) and adjusts the key's usage */
+	/** DELETE /file/:uuid -- deletes from storage (file + thumbnail) and adjusts the key's usage */
 	public function Delete($params = false): array {
 		$key = $this->GetRequestKey();
-		$file = FileControl::GetForKey($key, (int)$params["id"]);
+		$file = FileControl::GetForKeyByUuid($key, (string)$params["uuid"]);
 		FileControl::Delete($file, $key);
 		return ["deleted" => true];
 	}
 
-	/** POST /file/:id/tags -- body: name */
+	/** POST /file/:uuid/tags -- body: name */
 	public function AttachTag($params): array {
 		$key = $this->GetRequestKey();
-		$file = FileControl::GetForKey($key, (int)$params["id"]);
+		$file = FileControl::GetForKeyByUuid($key, (string)$params["uuid"]);
 		$data = $this->GetPost();
 		$tag = TagControl::GetOrCreate($data["name"] ?? "");
 		FileTagControl::Attach((int)$file->id, (int)$tag->id);
 		return $this->FileView($file);
 	}
 
-	/** DELETE /file/:id/tags/:tag -- :tag is the tag name */
+	/** DELETE /file/:uuid/tags/:tag -- :tag is the tag name */
 	public function DetachTag($params): array {
 		$key = $this->GetRequestKey();
-		$file = FileControl::GetForKey($key, (int)$params["id"]);
+		$file = FileControl::GetForKeyByUuid($key, (string)$params["uuid"]);
 		$tag = TagControl::GetRowWhere(["name" => $params["tag"] ?? ""]);
 		if($tag === null) {
 			ErrorCodes::Instance()->ThrowException(4044);
@@ -111,11 +111,15 @@ class FileApi extends ExplorerApiControl {
 		return $this->FileView($file);
 	}
 
-	private function FileView(File $file): array {
+	/**
+	 * $folder, when the caller already resolved it (Upload()/GetAll()), skips a second
+	 * lookup for folder_uuid; otherwise it's resolved from $file->folder_id.
+	 */
+	private function FileView(File $file, ?Folder $folder = null): array {
 		$storage = StorageFactory::Instance()->Get();
 		return [
-			"id" => (int)$file->id,
-			"folder_id" => (int)$file->folder_id,
+			"uuid" => $file->uuid,
+			"folder_uuid" => $folder !== null ? $folder->uuid : FolderControl::UuidFor($file->folder_id),
 			"name" => $file->name,
 			"extension" => $file->extension,
 			"mime_type" => $file->mime_type,
@@ -126,9 +130,7 @@ class FileApi extends ExplorerApiControl {
 			"duration" => $file->duration !== null ? (int)$file->duration : null,
 			"no_convert" => (bool)$file->no_convert,
 			"url" => $storage->url($file->storage_path, $file->name, $file->DispositionType()),
-			"thumbnail_url" => $file->HasThumbnail()
-				? $storage->url($file->thumbnail_token.".".(strtolower($file->extension) === "png" ? "png" : "jpg"))
-				: null,
+			"thumbnail_url" => $file->HasThumbnail() ? $storage->url($file->thumbnail_path) : null,
 			"tags" => array_map(fn($t) => $t->name, FileTagControl::GetTagsForFile((int)$file->id)),
 			"created_at" => $file->created_at,
 		];

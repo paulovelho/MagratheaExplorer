@@ -1,31 +1,31 @@
 import { apiGet, apiPut, apiDelete, apiPostForm, getKey } from './client'
 
-export function fetchFiles(folderId) {
-  const qs = folderId != null ? `?folder_id=${encodeURIComponent(folderId)}` : ''
+export function fetchFiles(folderUuid) {
+  const qs = folderUuid != null ? `?folder_uuid=${encodeURIComponent(folderUuid)}` : ''
   return apiGet(`/files${qs}`)
 }
 
-export function fetchFile(id) {
-  return apiGet(`/file/${id}`)
+export function fetchFile(uuid) {
+  return apiGet(`/file/${uuid}`)
 }
 
-export function renameFile(id, name) {
-  return apiPut(`/file/${id}`, { name })
+export function renameFile(uuid, name) {
+  return apiPut(`/file/${uuid}`, { name })
 }
 
-export function deleteFile(id) {
-  return apiDelete(`/file/${id}`)
+export function deleteFile(uuid) {
+  return apiDelete(`/file/${uuid}`)
 }
 
 /**
  * Uploads a file via XHR (not fetch) so upload progress is observable.
  * onProgress receives a 0-100 percentage.
  */
-export function uploadFile(file, folderId, { onProgress } = {}) {
+export function uploadFile(file, folderUuid, { onProgress } = {}) {
   return new Promise((resolve, reject) => {
     const formData = new FormData()
     formData.append('file', file)
-    if (folderId != null) formData.append('folder_id', folderId)
+    if (folderUuid != null) formData.append('folder_uuid', folderUuid)
 
     const xhr = new XMLHttpRequest()
     xhr.open('POST', '/api/v1/files')

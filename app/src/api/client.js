@@ -69,6 +69,35 @@ export function apiGet(path) {
   return request(path, { method: 'GET' })
 }
 
+/**
+ * GET with no Authorization header, for the public share routes.
+ *
+ * Deliberately not routed through request(): that clears the stored key and fires
+ * onUnauthorized on a 401, which would log a visitor out of their own Explorer session
+ * just for opening a share link in the same tab. A share link's 404 must stay a plain
+ * 404 for this page only.
+ */
+export async function apiGetPublic(path) {
+  const res = await fetch(BASE_URL + path)
+
+  let envelope = null
+  try {
+    envelope = await res.json()
+  } catch {
+    // ignore -- handled as a failure below since envelope stays null
+  }
+
+  // Same { success, data } envelope as request(): some framework error paths ship
+  // success:false with an HTTP 200, so `success` -- not res.ok -- is the real signal.
+  if (!res.ok || !envelope || envelope.success !== true) {
+    const code = envelope?.data?.code ?? null
+    const message = envelope?.data?.message || `Request failed (${res.status})`
+    throw new ApiError(res.status, code, message)
+  }
+
+  return envelope.data
+}
+
 export function apiPost(path, body) {
   return request(path, { method: 'POST', body })
 }

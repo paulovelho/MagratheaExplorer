@@ -47,7 +47,8 @@ CREATE TABLE `_magrathea_logs` (
 
 CREATE TABLE `access_keys` (
 	`id` int(11) PRIMARY KEY AUTO_INCREMENT,
-	`uuid` char(36) NOT NULL UNIQUE,
+	`uuid` char(36) NOT NULL UNIQUE COMMENT 'Bearer credential -- must never appear in a URL.',
+	`storage_uuid` char(36) NOT NULL UNIQUE COMMENT 'Public, non-secret storage directory name for this key''s objects. Never swap with `uuid`.',
 	`name` varchar(255) NOT NULL UNIQUE,
 	`uses` int(11) NOT NULL DEFAULT 0,
 	`usage_limit` int(11) NULL,
@@ -70,6 +71,7 @@ CREATE TABLE `scheduled_deletions` (
 
 CREATE TABLE `folders` (
 	`id` int(11) PRIMARY KEY AUTO_INCREMENT,
+	`uuid` char(36) NOT NULL UNIQUE,
 	`key_id` int(11) NOT NULL,
 	`parent_id` int(11) NULL,
 	`name` varchar(255) NOT NULL,
@@ -82,6 +84,7 @@ CREATE TABLE `folders` (
 
 CREATE TABLE `files` (
 	`id` int(11) PRIMARY KEY AUTO_INCREMENT,
+	`uuid` char(36) NOT NULL UNIQUE,
 	`token` char(21) NOT NULL UNIQUE,
 	`thumbnail_token` char(21) NULL UNIQUE,
 	`key_id` int(11) NOT NULL,
@@ -96,6 +99,7 @@ CREATE TABLE `files` (
 	`height` int(11) NULL,
 	`duration` int(11) NULL,
 	`no_convert` tinyint(1) NOT NULL DEFAULT 0,
+	`thumbnail_path` varchar(255) NULL,
 	`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 	`updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 	FOREIGN KEY (`key_id`) REFERENCES `access_keys`(`id`),
@@ -113,4 +117,26 @@ CREATE TABLE `file_tags` (
 	PRIMARY KEY (`file_id`, `tag_id`),
 	FOREIGN KEY (`file_id`) REFERENCES `files`(`id`),
 	FOREIGN KEY (`tag_id`) REFERENCES `tags`(`id`)
+);
+
+CREATE TABLE `shares` (
+	`id` int(11) PRIMARY KEY AUTO_INCREMENT,
+	`uuid` char(36) NOT NULL UNIQUE COMMENT 'The share link itself. Public but unguessable -- holding it IS the access check.',
+	`key_id` int(11) NOT NULL,
+	`file_id` int(11) NULL,
+	`folder_id` int(11) NULL,
+	`views` int(11) NOT NULL DEFAULT 0,
+	`last_viewed_at` datetime NULL,
+	`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+	`updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+	KEY `idx_shares_key` (`key_id`),
+	KEY `idx_shares_file` (`file_id`),
+	KEY `idx_shares_folder` (`folder_id`),
+	CONSTRAINT `chk_share_target` CHECK (
+		(`file_id` IS NOT NULL AND `folder_id` IS NULL) OR
+		(`file_id` IS NULL AND `folder_id` IS NOT NULL)
+	),
+	FOREIGN KEY (`key_id`) REFERENCES `access_keys`(`id`),
+	FOREIGN KEY (`file_id`) REFERENCES `files`(`id`),
+	FOREIGN KEY (`folder_id`) REFERENCES `folders`(`id`)
 );

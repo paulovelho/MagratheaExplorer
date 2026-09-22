@@ -7,6 +7,8 @@ use MagratheaExplorer\Folder\FolderControl;
 use MagratheaExplorer\Folder\Base\FolderControlBase;
 use MagratheaExplorer\File\FileControl;
 use MagratheaExplorer\File\Base\FileControlBase;
+use MagratheaExplorer\Share\ShareControl;
+use MagratheaExplorer\Storage\StorageFactory;
 
 class KeyControl extends \MagratheaExplorer\Key\Base\KeyControlBase {
 
@@ -65,10 +67,19 @@ class KeyControl extends \MagratheaExplorer\Key\Base\KeyControlBase {
 	 * deletions and folders/files before the key row (their own key_id FK).
 	 */
 	public static function DeleteKeyNow(Key $key): void {
+		// First of all: every share row points at a file, a folder AND this key, so it
+		// blocks all three deletes below (and, via the file delete, removeDirectory()).
+		ShareControl::DeleteForKey((int)$key->id);
+
 		$files = FileControlBase::GetWhere(["key_id" => $key->id]);
 		foreach($files as $file) {
 			FileControl::DeleteFileAndStorage($file);
 		}
+
+		// Best-effort: only succeeds once every file above is gone, since the directory
+		// has to be empty. Called while $key->storage_uuid is still readable -- must run
+		// before $key->Delete() below.
+		StorageFactory::Instance()->Get()->removeDirectory($key->StorageDir());
 
 		self::DeleteFoldersDeepestFirst((int)$key->id);
 

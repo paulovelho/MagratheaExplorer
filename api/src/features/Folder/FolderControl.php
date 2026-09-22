@@ -30,6 +30,9 @@ class FolderControl extends \MagratheaExplorer\Folder\Base\FolderControlBase {
 	 * distinguish "not yours" from "doesn't exist". Uses GetRowWhere (never-throwing) rather
 	 * than `new Folder($id)` (which throws MagratheaModelException on a miss) so the 404 can
 	 * carry our own error code.
+	 *
+	 * Int-id lookup, kept for ImportAdmin and BrowserAdmin -- the admin stays on int ids
+	 * (see plan.md §0). Public API controllers use GetForKeyByUuid() instead.
 	 */
 	public static function GetForKey(Key $key, int $id): Folder {
 		$folder = self::GetRowWhere(["id" => $id, "key_id" => $key->id]);
@@ -39,12 +42,28 @@ class FolderControl extends \MagratheaExplorer\Folder\Base\FolderControlBase {
 		return $folder;
 	}
 
-	public static function Create(Key $key, ?int $parentId, string $name): Folder {
+	/** Uuid counterpart of GetForKey() -- the public API's lookup path. Same 404 reasoning. */
+	public static function GetForKeyByUuid(Key $key, string $uuid): Folder {
+		$folder = self::GetRowWhere(["uuid" => $uuid, "key_id" => $key->id]);
+		if($folder === null) {
+			ErrorCodes::Instance()->ThrowException(4042);
+		}
+		return $folder;
+	}
+
+	/** `null` in, `null` out -- otherwise one lookup for the uuid of an int folder id. */
+	public static function UuidFor(?int $id): ?string {
+		if($id === null) return null;
+		$folder = self::GetRowWhere(["id" => $id]);
+		return $folder !== null ? $folder->uuid : null;
+	}
+
+	public static function Create(Key $key, ?Folder $parent, string $name): Folder {
 		$name = trim($name);
 		if(empty($name)) {
 			ErrorCodes::Instance()->ThrowException(4001, null, "name");
 		}
-		$parent = $parentId !== null ? self::GetForKey($key, $parentId) : self::GetRoot($key);
+		$parent = $parent ?? self::GetRoot($key);
 		$existing = self::GetRowWhere(["key_id" => $key->id, "parent_id" => $parent->id, "name" => $name]);
 		if($existing !== null) {
 			ErrorCodes::Instance()->ThrowException(4004);
@@ -63,12 +82,12 @@ class FolderControl extends \MagratheaExplorer\Folder\Base\FolderControlBase {
 	 * re-running the same import to reuse the folder tree it already created rather than
 	 * erroring out on the second pass.
 	 */
-	public static function GetOrCreate(Key $key, ?int $parentId, string $name): Folder {
+	public static function GetOrCreate(Key $key, ?Folder $parent, string $name): Folder {
 		$name = trim($name);
 		if(empty($name)) {
 			ErrorCodes::Instance()->ThrowException(4001, null, "name");
 		}
-		$parent = $parentId !== null ? self::GetForKey($key, $parentId) : self::GetRoot($key);
+		$parent = $parent ?? self::GetRoot($key);
 		$existing = self::GetRowWhere(["key_id" => $key->id, "parent_id" => $parent->id, "name" => $name]);
 		if($existing !== null) {
 			return $existing;
@@ -97,6 +116,34 @@ class FolderControl extends \MagratheaExplorer\Folder\Base\FolderControlBase {
 		$folder->name = $name;
 		$folder->Update();
 		return $folder;
+	}
+
+	/**
+	 * Walks parent_id UPWARD from $folder, collecting the chain, and returns it root-first
+	 * once it reaches $root -- or null if it runs out of parents first. That null is the
+	 * entire subtree clamp for a public folder share: there is exactly one path from any
+	 * folder to the tree root, so a folder outside the shared subtree can never arrive at
+	 * $root on the way up, and handing a folder uuid to a visitor grants nothing.
+	 *
+	 * The same walk produces the breadcrumb path the share response needs anyway, so this
+	 * is not an extra query on top of the check.
+	 *
+	 * The depth cap is a cycle guard against a corrupted parent chain (a folder that is
+	 * transitively its own parent would otherwise loop forever) -- same posture as
+	 * KeyControl::DeleteFoldersDeepestFirst()'s $progressed net.
+	 */
+	public static function PathWithin(Folder $folder, Folder $root): ?array {
+		$chain = [];
+		$current = $folder;
+		for($depth = 0; $depth < 64; $depth++) {
+			array_unshift($chain, $current);
+			if((int)$current->id === (int)$root->id) return $chain;
+			if(empty($current->parent_id)) return null;
+			$parent = self::GetRowWhere(["id" => (int)$current->parent_id]);
+			if($parent === null) return null;
+			$current = $parent;
+		}
+		return null;
 	}
 
 	public static function AssertNotRoot(Folder $folder): void {

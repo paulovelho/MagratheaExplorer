@@ -87,4 +87,8 @@ class S3StorageAdapter implements StorageAdapter {
 		}
 	}
 
+	/** No-op: S3 has no directories, just object keys -- a "directory" is a key prefix. */
+	public function removeDirectory(string $path): void {
+	}
+
 }
