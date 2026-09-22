@@ -1,28 +1,11 @@
-import { ref } from 'vue'
-import { fetchSettings } from '../api/system'
-
 export const DEFAULT_APP_NAME = 'Magrathea Explorer'
 
-// Module-level so the name is fetched once and shared by every view that shows it.
-const appName = ref(DEFAULT_APP_NAME)
-let loaded = null
-
-function load() {
-  if (!loaded) {
-    loaded = fetchSettings()
-      .then((settings) => {
-        if (settings?.app_name) appName.value = settings.app_name
-        document.title = appName.value
-      })
-      .catch(() => {
-        // Keep the default; allow a retry on the next mount.
-        loaded = null
-      })
-  }
-  return loaded
-}
+// api/src/app-index.php injects ConfigApp's app_name into this meta tag (and
+// <title>) when it serves index.html, so there's nothing to fetch. Under the
+// Vite dev server index.html isn't served through PHP, so it stays the default.
+const appName =
+  document.querySelector('meta[name="application-name"]')?.content || DEFAULT_APP_NAME
 
 export function useAppName() {
-  load()
   return { appName }
 }

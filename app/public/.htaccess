@@ -1,10 +1,13 @@
 # SPA fallback: vue-router uses history mode, so a direct load/refresh of
 # e.g. /app/folder/42 has no matching file in this dist build -- send
-# anything that isn't a real file or directory to index.html and let the
-# router take over client-side.
+# anything that isn't a real file to api/src/app-index.php, which serves
+# index.html with ConfigApp's app_name injected, and let the router take
+# over client-side. index.html itself (and the /app/ directory, which would
+# otherwise hit it via DirectoryIndex) goes there too, so the raw template
+# is never served.
 RewriteEngine On
 RewriteBase /app/
-RewriteCond %{REQUEST_FILENAME} -f [OR]
-RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^index\.html$ /app-index.php [L]
+RewriteCond %{REQUEST_FILENAME} -f
 RewriteRule ^ - [L]
-RewriteRule ^ index.html [L]
+RewriteRule ^ /app-index.php [L]

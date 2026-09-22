@@ -71,14 +71,29 @@ platypusweb.com.br {
 	# Admin app (Vue 3 + Vite) lives in the separate app/ project at the repo
 	# root -- served at /app, sibling to the versioned JSON API at /api/v1.
 	# Points at the repo-root dist/ (Vite's build output, committed to git),
-	# not app/src. try_files falls back to index.html for any path that
-	# isn't a real file (vue-router uses history mode, so a direct
-	# load/refresh of e.g. /app/folder/42 has no matching file here) and
-	# lets the router take over client-side.
-	handle_path /app/* {
-		root * /var/www/html/app
-		try_files {path} /index.html
+	# not app/src. Real files (hashed assets, favicons) are served
+	# statically; everything else -- /app/ itself, index.html, and any
+	# vue-router history-mode path like /app/folder/42 -- goes to
+	# api/src/app-index.php, which serves index.html with ConfigApp's
+	# app_name injected and lets the router take over client-side. Paths
+	# ending in "/" are excluded from @appStatic so /app/ can't match the
+	# directory and get served the raw index.html template. Mirrors
+	# app/public/.htaccess (copied into dist/ at build time).
+	@appStatic {
+		path /app/*
+		not path */
+		not path /app/index.html
+		file {
+			root /var/www/html
+		}
+	}
+	handle @appStatic {
+		root * /var/www/html
 		file_server
+	}
+	handle /app* {
+		rewrite * /app-index.php
+		php_fastcgi 127.0.0.1:9000
 	}
 
 	# Default: anything not matched above (admin.php, direct .php class
