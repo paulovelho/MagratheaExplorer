@@ -151,7 +151,7 @@ api/                                        -> JSON API project (document root: 
       Folder/                              -> Folder (virtual, nestable, per-key)
       File/                                -> File, Tag, and the whole upload pipeline
       Share/                               -> Share links: owner API, public API, admin page
-app/                                        -> Vue 3 + Vite admin app source (see script/build.sh)
+app/                                        -> Vue 3 + Vite admin app source (see scripts/build.sh)
 dist/                                       -> app/'s build output, committed to git; served at /app
                                                 via api/src/app (a committed symlink to ../../dist)
 ```
