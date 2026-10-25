@@ -43,7 +43,10 @@ Switching an instance from one type to the other later is possible but manual; s
 ```sh
 git clone <repo-url> /var/www/explorer
 cd /var/www/explorer
+(cd api && composer install --no-dev --optimize-autoloader)
 ```
+
+`deploy.sh` doesn't run composer; it only checks that `api/vendor/` is there.
 
 Create an empty database and a user for it:
 
@@ -56,7 +59,7 @@ GRANT ALL PRIVILEGES ON magrathea_explorer.* TO 'explorer'@'localhost';
 ### 3. Configure
 
 Run the installer once. With no config files present, it copies the two samples and
-stops:
+flags that step as failed; quit (`q`) and fill them in:
 
 ```sh
 scripts/deploy.sh install
@@ -95,12 +98,29 @@ WEB_USER=www-data scripts/deploy.sh install
 and similar shared hosts it's your own user, so use `WEB_USER=$USER`). The script:
 
 1. checks the PHP version and extensions
-2. runs `composer install --no-dev` in `api/`
-3. creates the logs, cache and (local storage only) storage folders, and makes them
+2. checks that composer dependencies are installed (`api/vendor/`)
+3. checks that both config files exist (copying the samples if not)
+4. checks the configuration: `use_environment` points at a section present in both
+   files, `db_host`, `db_name`, `db_user`, `app_url` and `jwt_key` are set, and
+   `storage.conf` has every key its `driver` needs
+5. creates the logs, cache and (local storage only) storage folders, and makes them
    writable by `WEB_USER`. This needs root; without it you get the `chown` command to run.
-4. writes `api/src/.user.ini` with 64 MB upload limits, if it doesn't exist yet
-5. loads `api/database/database.sql`, but only if the database is still empty
+6. writes `api/src/.user.ini` with 64 MB upload limits, if it doesn't exist yet
+7. installs the database: connects with the `db_*` settings, creates `db_name` if it
+   doesn't exist (only works if `db_user` is allowed to), and loads
+   `api/database/database.sql`, but only if the database is still empty
    (`SKIP_DB=1` skips this step)
+
+`install` shows these steps as a menu, each marked `ok`, `FAILED` or not run yet,
+and you pick what runs next. Enter runs the suggested step (the next one that
+hasn't passed), so a clean install is Enter all the way down; `a` runs the rest in
+order, stopping at a failure. A failed step is flagged and nothing else happens
+until you choose: fix the problem and run it again, move on anyway, or quit. That
+also lets you re-run a single step, e.g. **Check configuration** and **Install the
+database** after editing `magrathea.conf`. `v` prints the vhost from step 5 below.
+
+On quit it lists the steps that failed or never ran, and exits non-zero if there are
+any. It's interactive only: run without a terminal (piped, cron, CI), it refuses.
 
 `.user.ini` only works where PHP runs as php-fpm/CGI. With `mod_php`, set
 `upload_max_filesize` and `post_max_size` in the server's `php.ini` instead.
@@ -301,15 +321,17 @@ leaves it out when `driver = "s3"`.
 
 ## Updating an instance
 
+There's no update command; it's a pull plus dependencies:
+
 ```sh
 cd /var/www/explorer
-scripts/deploy.sh update
+cat api/version                       # note the version you're coming from
+git pull --ff-only
+(cd api && composer install --no-dev --optimize-autoloader)
 ```
 
-This pulls with `--ff-only`, reinstalls composer dependencies, and makes sure the
-runtime folders exist. If the update crossed a version that has a migration in
-`api/database/migrations/`, it lists the files to apply. It **doesn't** apply them; run
-them yourself, in the order listed, ideally right after a DB backup:
+Then apply every file in `api/database/migrations/` (named `<version>_<what>.sql`) newer
+than the version you came from, in version order, ideally right after a DB backup:
 
 ```sh
 mysql -u explorer -p magrathea_explorer < api/database/migrations/1.3.0_shares.sql
