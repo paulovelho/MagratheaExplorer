@@ -8,7 +8,7 @@ namespace MagratheaExplorer\Storage;
  * file here (relies on the vhost's own mime-type guess by extension); Content-Disposition
  * is: url() passes it through the query string, and the storage root's .htaccess
  * (Apache) / the matching Caddyfile block (Caddy) turn that into the actual response
- * header (see api/storage/.htaccess and docker/caddy/site.caddy) -- this adapter itself
+ * header (see api/storage/.htaccess and api/site.caddy.sample) -- this adapter itself
  * can't guarantee those are deployed correctly.
  */
 class LocalStorageAdapter implements StorageAdapter {
@@ -53,7 +53,7 @@ class LocalStorageAdapter implements StorageAdapter {
 	 * download name is smuggled in as a query string ?disposition=&filename= pair and
 	 * turned into Content-Disposition by the storage root's .htaccess (Apache) or the
 	 * matching Caddyfile block (Caddy) -- see api/storage/.htaccess and
-	 * docker/caddy/site.caddy. Both read %{QUERY_STRING}/the raw query verbatim, with
+	 * api/site.caddy.sample. Both read %{QUERY_STRING}/the raw query verbatim, with
 	 * no percent-decoding step of their own, so $downloadName is reduced to a charset
 	 * ([A-Za-z0-9._-]) that never needs percent-encoding in the first place -- anything
 	 * that did would either break the query string or show up still percent-encoded in

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds the admin app (app/) and writes the output into the repo-root
 # dist/ folder (see app/vite.config.js's outDir), which is what
-# docker-compose.yml, docker/apache/site-dev.conf and docker/caddy/site.caddy
+# docker-compose.yml, docker/apache/site-dev.conf and api/site.caddy.sample
 # serve at /app. Run this any time app/src changes and commit the result.
 set -euo pipefail
 

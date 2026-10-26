@@ -1,25 +1,34 @@
-# Caddy equivalent of docker/apache/site-dev.conf + api/src/.htaccess.
-# Not wired into docker-compose.yml (that still builds the Apache image for
-# dev) -- this is a reference config for a Caddy-fronted instance (see
-# plan.md §11: "bare Apache/Caddy in prod").
+# Caddy equivalent of api/src/.htaccess + the vhost `scripts/deploy.sh vhost` prints.
+# Copy it to api/src/site.caddy (gitignored, like the .conf files): that's
+# MagratheaPHP's appRoot, where the framework admin's "site.caddy" page reads it
+# from. It's never served from there (see @caddyfile below, and the matching
+# <FilesMatch> deny in .htaccess).
 #
-# If this domain also serves other, unrelated tools/paths outside this repo,
-# fold these `handle`/`handle_path` blocks into that shared site address
-# block instead of running this as its own -- Caddy won't let two site
-# blocks both claim the same hostname.
-#
-# php_fastcgi's upstream below is a placeholder -- point it at your actual
-# php-fpm listener (unix socket or host:port).
+# Paths match the layout in docs/deploy.md -- change the hostname, the two roots
+# and the php_fastcgi socket for your server. If this domain also serves other,
+# unrelated tools/paths outside this repo, fold these `handle` blocks into that
+# shared site address block instead of running this as its own -- Caddy won't let
+# two site blocks both claim the same hostname.
 
-platypusweb.com.br {
-	root * /var/www/html/src
+files.example.com {
+	root * /var/www/explorer/api/src
 
-	# .user.ini is Apache/php.ini-specific config -- never serve it (parity
-	# with the <Files ".user.ini"> deny block in api/src/.htaccess). Caddy's
-	# file_server never lists directories by default, so no Options -Indexes
-	# equivalent is needed.
-	@userini path *.user.ini
-	respond @userini 403
+	# Dotfiles (.htaccess, .user.ini -- both here and in local storage) and this
+	# file itself. Has to be a `handle`, not a bare `respond`: Caddy runs `handle`
+	# before `respond`, so the catch-all handle below would serve them first.
+	# .well-known stays reachable for ACME and friends. Caddy's file_server never
+	# lists directories, so no Options -Indexes equivalent is needed.
+	@private {
+		path_regexp /\.
+		not path /.well-known/*
+	}
+	@caddyfile path /site.caddy
+	handle @private {
+		respond 403
+	}
+	handle @caddyfile {
+		respond 403
+	}
 
 	# Root has nothing of its own -- send visitors to the admin app instead
 	# of falling through to php_fastcgi (which would dispatch it into the
@@ -46,11 +55,11 @@ platypusweb.com.br {
 		# it. {http.request.uri.query} preserves real GET filters
 		# (?folder_id=5 etc.), same job as .htaccess's %{QUERY_STRING}/%1.
 		rewrite * /index.php?magrathea_control={re.apiv1.1}&{http.request.uri.query}
-		php_fastcgi 127.0.0.1:9000
+		php_fastcgi unix//run/php/php8.4-fpm.sock
 	}
 
 	# storage.conf's local_path lives outside api/src's docroot -- route it
-	# here so local_url (.../storage) resolves. Not needed for s3/R2 drivers.
+	# here so local_url (.../storage) resolves. Drop this block on s3/R2 instances.
 	#
 	# No PHP in this read path (see StorageAdapter docs), so LocalStorageAdapter::url()
 	# smuggles the download name in as ?disposition=&filename= and this block turns
@@ -59,20 +68,19 @@ platypusweb.com.br {
 	# side, so the raw (already-decoded-by-Caddy) placeholder value is safe to drop
 	# straight into the header with no extra encoding/decoding of our own.
 	handle_path /storage/* {
-		root * /var/www/storage
+		root * /var/www/explorer-storage
+		# Same job as the vhost's nosniff header: browsers mustn't second-guess a
+		# user-uploaded file's Content-Type into something more dangerous.
+		header X-Content-Type-Options nosniff
 		@download `{http.request.uri.query.filename} != ''`
 		header @download Content-Disposition "{http.request.uri.query.disposition}; filename=\"{http.request.uri.query.filename}\""
-		# The storage root now has one directory per key -- file_server doesn't list
-		# directories by default, so there's no Options -Indexes equivalent needed here
-		# (unlike api/storage/.htaccess, which has to set it explicitly for Apache).
 		file_server
 	}
 
-	# Admin app (Vue 3 + Vite) lives in the separate app/ project at the repo
-	# root -- served at /app, sibling to the versioned JSON API at /api/v1.
-	# Points at the repo-root dist/ (Vite's build output, committed to git),
-	# not app/src. Real files (hashed assets, favicons) are served
-	# statically; everything else -- /app/ itself, index.html, and any
+	# Admin app (Vue 3 + Vite): api/src/app is a committed symlink to the
+	# repo-root dist/ (Vite's build output), served at /app, sibling to the
+	# versioned JSON API at /api/v1. Real files (hashed assets, favicons) are
+	# served statically; everything else -- /app/ itself, index.html, and any
 	# vue-router history-mode path like /app/folder/42 -- goes to
 	# api/src/app-index.php, which serves index.html with ConfigApp's
 	# app_name injected and lets the router take over client-side. Paths
@@ -83,24 +91,22 @@ platypusweb.com.br {
 		path /app/*
 		not path */
 		not path /app/index.html
-		file {
-			root /var/www/html
-		}
+		file
 	}
 	handle @appStatic {
-		root * /var/www/html
 		file_server
 	}
-	handle /app* {
+	@app path /app /app/*
+	handle @app {
 		rewrite * /app-index.php
-		php_fastcgi 127.0.0.1:9000
+		php_fastcgi unix//run/php/php8.4-fpm.sock
 	}
 
 	# Default: anything not matched above (admin.php, direct .php class
 	# files, static assets) is executed/served straight from api/src, same
 	# as Apache's `RewriteCond %{REQUEST_FILENAME} -f` passthrough.
 	handle {
-		php_fastcgi 127.0.0.1:9000
+		php_fastcgi unix//run/php/php8.4-fpm.sock
 		file_server
 	}
 }

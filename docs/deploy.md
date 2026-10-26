@@ -5,23 +5,26 @@ place, chosen at deploy time in `api/configs/storage.conf`:
 
 - **Local storage**: files live on the server's own disk and the web server serves them.
 - **Cloudflare R2**: files live in an R2 bucket and Cloudflare serves them.
+- **AWS S3**: files live in an S3 bucket and CloudFront serves them.
 
-Most of the setup is the same for both; [Common setup](#common-setup) covers it, then
-each storage type has its own section. `scripts/deploy.sh` automates the parts that can
-be automated safely and prints the rest.
+Most of the setup is the same for all of them; [Common setup](#common-setup) covers it,
+then each storage type has its own guide: [setup-local.md](setup-local.md),
+[setup-s3-cloudflare.md](setup-s3-cloudflare.md) and [setup-s3-aws.md](setup-s3-aws.md).
+`scripts/deploy.sh` automates the parts that can be automated safely and prints the rest.
 
 ## Which one?
 
-| | Local storage | Cloudflare R2 |
-|---|---|---|
-| Where files live | `local_path` on the server's disk | an R2 bucket |
-| Who serves file downloads | your web server, at `/storage` | Cloudflare, at the bucket's public domain |
-| Web server config | extra `/storage` alias + `mod_headers` | nothing extra |
-| Download filename (`Content-Disposition`) | set per request by `api/storage/.htaccess` | saved on the object at upload time |
-| Disk space / backups | your problem: watch the disk, back up `local_path` | Cloudflare's: pay per GB stored, no egress fees |
-| Good for | small instances, shared hosting, one box | anything that will grow, or serves a lot of traffic |
+| | Local storage | Cloudflare R2 | AWS S3 |
+|---|---|---|---|
+| Where files live | `local_path` on the server's disk | an R2 bucket | an S3 bucket |
+| Who serves file downloads | your web server, at `/storage` | Cloudflare, at the bucket's public domain | CloudFront, at its alternate domain |
+| Web server config | extra `/storage` alias + `mod_headers` | nothing extra | nothing extra |
+| Download filename (`Content-Disposition`) | set per request by `api/storage/.htaccess` | saved on the object at upload time | saved on the object at upload time |
+| Disk space / backups | your problem: watch the disk, back up `local_path` | Cloudflare's: pay per GB stored, no egress fees | AWS's: pay per GB stored; CloudFront Free plan covers 100 GB/month of downloads |
+| Files domain DNS | nothing extra | must be on Cloudflare DNS | any provider (two CNAMEs) |
+| Good for | small instances, shared hosting, one box | anything that will grow, or serves a lot of traffic | the same, when the domain's DNS has to stay off Cloudflare |
 
-Either way, **uploads still pass through PHP on your server**: it sniffs the MIME
+Whichever you pick, **uploads still pass through PHP on your server**: it sniffs the MIME
 type, strips metadata, and builds the thumbnail before handing the file to storage.
 PHP's upload limits apply to both.
 
@@ -85,7 +88,8 @@ Edit `api/configs/magrathea.conf`:
 ```
 
 Then fill in `api/configs/storage.conf` for the storage type you picked:
-[local](#local-storage-instance) or [R2](#cloudflare-r2-instance). Both config files are
+[local](setup-local.md#storageconf), [R2](setup-s3-cloudflare.md#4-storageconf) or
+[AWS S3](setup-s3-aws.md#7-storageconf). Both config files are
 gitignored; never commit them.
 
 ### 4. Install
@@ -135,8 +139,9 @@ scripts/deploy.sh vhost
 ```
 
 prints an Apache vhost built from your configs. It includes the `/storage` block only
-for local storage. For Caddy, start from `docker/caddy/site.caddy`: change the hostname,
-the paths and the `php_fastcgi` upstream, and drop the `/storage` block on R2 instances.
+for local storage. For Caddy, copy `api/site.caddy.sample` to `api/src/site.caddy` (gitignored), then change
+the hostname, the paths and the `php_fastcgi` socket, and drop the `/storage` block on
+S3/R2 instances. The framework admin's **site.caddy** page shows that copy.
 
 Put HTTPS in front (e.g. `certbot --apache`). `app_url` must match the final `https://`
 URL.
@@ -172,152 +177,13 @@ curl -X POST -H "Authorization: Bearer <key-uuid>" -F "file=@test.jpg" \
 Open the `url` from the upload response in a browser: it should load, and the download
 should keep the original filename.
 
-## Local storage instance
+## Storage setup
 
-Files are written to `local_path` as `{key-storage-uuid}/{token}.{ext}` and served by
-the web server at `local_url`.
+Finish the instance with the guide for its storage type:
 
-### storage.conf
-
-```ini
-[production]
-	driver = "local"
-	local_path = "/var/www/explorer-storage"
-	local_url = "https://files.example.com/storage"
-```
-
-- Keep `local_path` **outside** `api/src/`, so uploaded files never sit inside the PHP
-  app's docroot. They're served only through the `/storage` alias.
-- `local_url` is `app_url` + `/storage`, the path the vhost aliases.
-
-### What `deploy.sh install` does for it
-
-It creates `local_path` and copies `api/storage/.htaccess` into it. That file:
-
-- turns the `?disposition=…&filename=…` query string on download URLs into a real
-  `Content-Disposition` header, so files download under their original name instead of
-  `{token}.{ext}`
-- disables directory listings. A listing of a key's folder would be a full inventory of
-  that key's files.
-
-If you move or recreate `local_path` by hand, copy that `.htaccess` back.
-
-### Web server
-
-Apache needs, besides the docroot:
-
-```apache
-Alias /storage /var/www/explorer-storage
-<Directory /var/www/explorer-storage>
-    Options -Indexes +FollowSymLinks
-    AllowOverride All          # lets the storage .htaccess run
-    Require all granted
-    Header set X-Content-Type-Options "nosniff"
-</Directory>
-```
-
-and both modules enabled: `a2enmod rewrite headers`. Without `mod_headers`, files still
-download, but under their opaque token name.
-
-The `nosniff` header stops browsers from guessing a user-uploaded file's type and
-rendering it as something more dangerous than its sniffed `Content-Type`. Nothing in the
-repo sets it for you; `scripts/deploy.sh vhost` includes it. On Caddy, add
-`header X-Content-Type-Options nosniff` inside the `/storage` block.
-
-On Caddy, the `handle_path /storage/*` block in `docker/caddy/site.caddy` does the same
-job; no `.htaccess` is involved.
-
-### Operations
-
-- **Disk space**: every upload plus its thumbnail lands here. Monitor the disk; the
-  admin **Storage** page shows total usage across keys.
-- **Backups**: back up `local_path` **and** the database together. Files without their
-  DB rows are unreachable, and DB rows without their files are broken links.
-
-## Cloudflare R2 instance
-
-Files are stored in an R2 bucket through R2's S3-compatible API (the `s3` driver, which
-also works for real AWS S3), and served directly by Cloudflare from the bucket's public
-URL. Your server never serves file downloads.
-
-### 1. Create the bucket
-
-Cloudflare dashboard → **R2** → **Create bucket**, e.g. `explorer-files`. Pick the
-location hint closest to your users.
-
-### 2. Make it publicly readable
-
-Explorer hands out plain public URLs, so the bucket needs a public domain. In the
-bucket's **Settings → Public access**:
-
-- **Custom domain (use this in production)**: connect e.g. `cdn.files.example.com`. The
-  domain must be a zone on the same Cloudflare account. You get Cloudflare caching, and
-  you can add response headers (step 5).
-- **r2.dev subdomain**: one click, but rate-limited and meant for testing only.
-
-Whichever one you use is your `s3_public_url`. **It's required for R2.** Without it, file
-URLs fall back to the S3 API endpoint, which is not public, so every file link fails.
-
-### 3. Create an API token
-
-**R2 → Manage R2 API Tokens → Create API token**:
-
-- Permissions: **Object Read & Write**
-- Scope: **only** the bucket from step 1
-
-Save the **Access Key ID** and **Secret Access Key**: the secret is shown only once. The
-S3 endpoint is on the same screen: `https://<account_id>.r2.cloudflarestorage.com`.
-
-### 4. storage.conf
-
-```ini
-[production]
-	driver = "s3"
-	s3_endpoint = "https://<account_id>.r2.cloudflarestorage.com"
-	s3_region = "auto"                  ; R2 always uses "auto"
-	s3_bucket = "explorer-files"
-	s3_access_key = "<access key id>"
-	s3_secret_key = "<secret access key>"
-	s3_path_style = true
-	s3_public_url = "https://cdn.files.example.com"   ; no trailing slash needed
-```
-
-The `local_*` keys are ignored with `driver = "s3"` and can stay empty.
-
-### 5. Add `nosniff` on the public domain
-
-R2 can't store an `X-Content-Type-Options` header on an object (S3's `PutObject` has no
-such field), so add it at Cloudflare: on the custom domain's zone, go to **Rules →
-Transform Rules → Modify Response Header**, match hostname `cdn.files.example.com`, and
-**set** `X-Content-Type-Options` = `nosniff`. Without it, browsers may guess a
-user-uploaded file's type and render it as something more dangerous. You can't do this
-on `r2.dev`, which is one more reason not to use it in production.
-
-### Web server
-
-Just the docroot. Leave out the `/storage` alias; `scripts/deploy.sh vhost` already
-leaves it out when `driver = "s3"`.
-
-### How R2 serving differs from local storage
-
-- **Headers are set once, at upload.** `Content-Type`, `Content-Disposition` (with the
-  original filename) and `Cache-Control: public, max-age=31536000, immutable` are saved
-  on the object when it's uploaded. Changing them for existing files means re-uploading.
-  The long cache is safe because every upload gets a new random token; a file is
-  never overwritten at the same URL.
-- **Deletes may lag at the edge.** Deleting a file removes the object from R2, but
-  Cloudflare's cache on the custom domain can keep serving it until it expires. If
-  takedowns need to be immediate, purge the URL in Cloudflare too.
-- **No CORS setup needed.** The admin app only links to file URLs; it never reads them
-  from JavaScript. You'd only need a CORS policy on the bucket if a client starts
-  `fetch()`ing files directly.
-
-### Operations
-
-- **Backups**: the database is still on your server and needs backing up. R2 holds the
-  files; turn on bucket object versioning or copy to a second bucket if you need
-  protection against accidental deletes.
-- **Cost**: R2 bills for storage and operations, not for downloads.
+- [Local storage](setup-local.md)
+- [Cloudflare R2](setup-s3-cloudflare.md)
+- [AWS S3](setup-s3-aws.md)
 
 ## Updating an instance
 

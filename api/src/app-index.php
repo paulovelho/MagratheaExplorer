@@ -3,12 +3,12 @@
 // ConfigApp's `app_name` injected into <title> and <meta name="application-name">,
 // so the name is right from the first paint and changes in the admin show up on
 // the next page load -- no rebuild needed. dist/.htaccess (from app/public/.htaccess)
-// and docker/caddy/site.caddy route every /app request that isn't a real asset here.
+// and api/site.caddy.sample route every /app request that isn't a real asset here.
 include("_inc.php");
 
 use MagratheaExplorer\SystemApi;
 
-// Prod: api/src/app is a symlink to dist/. Docker/Caddy: dist/ is mounted at
+// Prod (Apache or Caddy): api/src/app is a symlink to dist/. Docker: dist/ is mounted at
 // /var/www/html/app, a sibling of api/src.
 $candidates = [
 	__DIR__."/app/index.html",

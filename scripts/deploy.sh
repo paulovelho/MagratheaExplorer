@@ -336,7 +336,7 @@ print_vhost() {
 	storage="$(conf storage.conf local_path)"
 	cat <<-EOF
 	# Apache vhost for $host (needs mod_rewrite + mod_headers; add TLS via certbot or similar).
-	# Caddy-fronted instances: use docker/caddy/site.caddy instead.
+	# Caddy-fronted instances: copy api/site.caddy.sample to api/src/site.caddy instead.
 	<VirtualHost *:80>
 	    ServerName $host
 	    DocumentRoot $API_DIR/src

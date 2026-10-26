@@ -106,7 +106,7 @@ for the machine-readable route contract.
    `StorageAdapter::url()`. Requires `mod_headers` enabled alongside `mod_rewrite`
    (both on by default on DreamHost and most shared hosts; `docker/Dockerfile` enables
    both for the docker-compose dev stack). Caddy-fronted instances get the same
-   behavior from `docker/caddy/site.caddy`'s `/storage` block instead — no `.htaccess`
+   behavior from `api/site.caddy.sample`'s `/storage` block instead — no `.htaccess`
    involved there.
 
    `local_path` gets one subdirectory per key, named for that key's own (non-secret)

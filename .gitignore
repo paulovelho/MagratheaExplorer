@@ -2,6 +2,7 @@ _compiled
 sftp-config.json
 magrathea.conf
 storage.conf
+site.caddy
 logs/*.txt
 logs/*.log
 logs/

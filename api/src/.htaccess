@@ -9,9 +9,11 @@ Options -Indexes
 # don't have FollowSymLinks on by default.
 Options +FollowSymLinks
 
-<Files ".user.ini">
+# .user.ini is PHP config; site.caddy is the Caddy equivalent of this file (it
+# lives here because it's MagratheaPHP's appRoot). Neither should be downloadable.
+<FilesMatch "^(\.user\.ini|site\.caddy)$">
   Require all denied
-</Files>
+</FilesMatch>
 
 <IfModule mod_rewrite.c>
   RewriteEngine On
