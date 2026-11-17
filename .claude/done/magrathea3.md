@@ -1,5 +1,7 @@
 # MagratheaPHP 3 migration — plan
 
+**DONE (2026-11-17):** plan closed. Committed in `12443dc`.
+
 Branch `upgrade/magrathea-3.0`, from `master` @ `bbdafe4` (`api/version` 1.3.0 → **1.4.0**).
 Framework: `platypustechnology/magratheaphp2` 2.3.4 → `platypustechnology/magratheaphp` 3.0.0.
 

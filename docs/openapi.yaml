@@ -1,98 +1,1072 @@
 openapi: 3.0.3
 info:
   title: Magrathea Explorer
-  description: >
-    Self-hosted file hosting API (images/audio/video/documents/other), obfuscated URLs,
-    pluggable local/S3/R2 storage. Every authenticated route takes `Authorization: Bearer <key-uuid>`.
   version: "1.4.0"
+  description: |
+    Self-hosted file hosting API (image / audio / video / document / other), with obfuscated
+    direct-from-storage URLs and one storage driver per instance (local disk, S3 or R2).
+
+    **Envelope.** Every JSON response, success or failure, is wrapped:
+
+        { "success": true,  "data": <payload> }
+        { "success": false, "data": { "code": 4042, "message": "Folder not found", ... } }
+
+    The schemas under each route describe the whole body, envelope included. Check `success`,
+    not only the HTTP status.
+
+    **HTTP status.** Taken from the error code: a 4-digit code is divided by 10 (`4042` -> 404,
+    `4031` -> 403, `5001` -> 500). Get the full code -> message map from `GET /error-codes`.
+
+    **Auth.** `Authorization: Bearer <key-uuid>` on every route except the ones marked
+    `security: []`. Keys are created by an operator in the admin panel (`/admin.php`). There is
+    no public route that creates one. Any auth problem (missing header, unknown key, inactive
+    key, expired key) gives the same generic 401 with `code: 401`. The specific codes
+    4011/4012/4013/4041 are listed by `/error-codes` but never reach a client.
+
+    **Request bodies.** POST and PUT take `application/x-www-form-urlencoded` (what the
+    first-party app sends) or `application/json`. JSON is only detected when the
+    `Content-Type` header *ends in* `json`: `application/json; charset=utf-8` is parsed as a
+    form, every field reads as missing, and you get a 4001. Uploads are `multipart/form-data`.
+
+    **Timestamps** are `YYYY-MM-DD HH:MM:SS` strings in the server's configured timezone
+    (`timezone` in `magrathea.conf`). They carry no offset and are not ISO 8601.
+
+    **Identifiers.** Folders, files and shares are addressed by UUIDv7 (lowercase). Integer
+    ids are never exposed.
+
 servers:
-  - url: /api/v1
+  - url: "{scheme}://{host}/api/v1"
+    description: Any instance. The API base is the instance's `app_url` + `/api/v1`.
+    variables:
+      scheme:
+        default: https
+        enum: [https, http]
+      host:
+        default: explorer.example.com
+
+security:
+  - bearerKey: []
+
+tags:
+  - name: system
+    description: Public server info. No auth.
+  - name: key
+    description: The calling key's own info, usage and scheduled deletion.
+  - name: folders
+  - name: files
+  - name: tags
+  - name: shares
+    description: Owner-side management of public share links.
+  - name: public-shares
+    description: Opening a share link. No auth. The share uuid is the credential.
+
+paths:
+
+  # ---------------------------------------------------------------- system
+
+  /version:
+    get:
+      tags: [system]
+      operationId: getVersion
+      summary: API and framework version
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          api: { type: string, example: Magrathea Explorer }
+                          version: { type: string, example: "1.4.0" }
+                          environment: { type: string, example: production }
+                          magrathea_version: { type: string, example: "3.0.0" }
+
+  /health-check:
+    get:
+      tags: [system]
+      operationId: healthCheck
+      summary: Liveness and database connectivity
+      security: []
+      responses:
+        "200":
+          description: "OK. Also returned when the database is down: check `data.database`."
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          health: { type: string, enum: [ok] }
+                          time: { $ref: "#/components/schemas/Timestamp" }
+                          database: { type: string, enum: [ok, fail] }
+
+  /settings:
+    get:
+      tags: [system]
+      operationId: getSettings
+      summary: Public runtime settings
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/Settings" }
+
+  /changelog:
+    get:
+      tags: [system]
+      operationId: getChangelog
+      summary: The 5 most recent changelog entries (server-cached)
+      description: >
+        Only `new`, `fix` and `improvement` bullets are included, and only the first line of
+        each one, so long descriptions come back cut off mid-sentence.
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/ChangelogEntry" }
+
+  /error-codes:
+    get:
+      tags: [system]
+      operationId: getErrorCodes
+      summary: Full error code -> message map (server-cached)
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        additionalProperties: { type: string }
+                        example:
+                          "4001": Missing required field
+                          "4042": Folder not found
+                          "4151": Unsupported or dangerous file type
+
+  # ---------------------------------------------------------------- key
+
+  /key:
+    get:
+      tags: [key]
+      operationId: getKey
+      summary: The calling key (its uuid is never echoed back)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/Key" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    delete:
+      tags: [key]
+      operationId: scheduleKeyDeletion
+      summary: Schedule this key, and everything it owns, for deletion in 14 days
+      description: |
+        Nothing is deleted right away. From this moment:
+        - uploads fail with 4014 (HTTP 401);
+        - every public share link of this key returns 4045, as if it didn't exist;
+        - every other route (reads, folder create/rename/delete, file rename/delete, share
+          create/list/delete) keeps working.
+
+        `POST /key/cancel-deletion` undoes it before `execute_at`. After that, a cron job
+        permanently deletes the key and all of its files, folders and shares.
+      responses:
+        "200":
+          description: Scheduled
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          scheduled: { type: boolean, enum: [true] }
+                          execute_at: { $ref: "#/components/schemas/Timestamp" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /key/usage:
+    get:
+      tags: [key]
+      operationId: getKeyUsage
+      summary: Usage counters only
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/KeyUsage" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /key/cancel-deletion:
+    post:
+      tags: [key]
+      operationId: cancelKeyDeletion
+      summary: Cancel a pending scheduled deletion
+      responses:
+        "200":
+          description: Cancelled
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          cancelled: { type: boolean, enum: [true] }
+        "400":
+          description: "No pending deletion to cancel (4007)"
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  # ---------------------------------------------------------------- folders
+
+  /folders:
+    get:
+      tags: [folders]
+      operationId: listFolders
+      summary: Direct child folders of one folder (not recursive)
+      description: >
+        Lists the children of `parent_uuid`, or of the key's root folder when it's left out.
+        The root folder itself never appears in any listing. No pagination, and no guaranteed
+        order (in practice it's creation order).
+      parameters:
+        - name: parent_uuid
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { $ref: "#/components/responses/FolderListOk" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [folders]
+      operationId: createFolder
+      summary: Create a folder
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema: { $ref: "#/components/schemas/FolderCreate" }
+          application/json:
+            schema: { $ref: "#/components/schemas/FolderCreate" }
+      responses:
+        "200": { $ref: "#/components/responses/FolderOk" }
+        "400":
+          description: "Missing name (4001), or a sibling with the same name already exists (4004)"
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /folder/{uuid}:
+    parameters:
+      - $ref: "#/components/parameters/Uuid"
+    get:
+      tags: [folders]
+      operationId: getFolder
+      summary: Get one folder (the root folder works too)
+      responses:
+        "200": { $ref: "#/components/responses/FolderOk" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [folders]
+      operationId: renameFolder
+      summary: Rename a folder. Folders can't be moved
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema: { $ref: "#/components/schemas/NameBody" }
+          application/json:
+            schema: { $ref: "#/components/schemas/NameBody" }
+      responses:
+        "200": { $ref: "#/components/responses/FolderOk" }
+        "400":
+          description: "Empty name (4001), or a sibling already has that name (4004)"
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [folders]
+      operationId: deleteFolder
+      summary: Delete an empty, non-root folder
+      description: >
+        Deletes nothing recursively. A folder with subfolders or files gives 4003. To remove a
+        tree, delete its files, then its subfolders deepest-first. Shares pointing at the folder
+        are deleted with it.
+      responses:
+        "200": { $ref: "#/components/responses/DeletedOk" }
+        "400":
+          description: "Folder not empty (4003), or it's the root folder (4005)"
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /folder/{uuid}/size:
+    get:
+      tags: [folders]
+      operationId: getFolderSize
+      summary: Total bytes of the folder's whole subtree, computed on demand
+      parameters:
+        - $ref: "#/components/parameters/Uuid"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          size: { type: integer, description: bytes }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ---------------------------------------------------------------- files
+
+  /files:
+    get:
+      tags: [files]
+      operationId: listFiles
+      summary: Files directly inside one folder
+      description: >
+        Always scoped to one folder: `folder_uuid`, or the key's root folder when it's left
+        out. `file_type` and `tag` narrow that folder's listing. They do not search the whole
+        key. Not recursive, no pagination, no guaranteed order.
+      parameters:
+        - name: folder_uuid
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: file_type
+          in: query
+          required: false
+          description: Any other value is a 4001.
+          schema: { $ref: "#/components/schemas/FileType" }
+        - name: tag
+          in: query
+          required: false
+          description: Exact tag name. An unknown tag returns an empty list, not an error.
+          schema: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/FileListOk" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [files]
+      operationId: uploadFile
+      summary: Upload one file
+      description: |
+        The real type comes from sniffing the content, never from the client's filename or
+        Content-Type. Executables and scripts are refused (4151). Anything the server doesn't
+        recognize is stored as `file_type: other` and always served as a download.
+
+        Images: metadata is always stripped. They're re-encoded to webp unless `no_convert` is
+        set, and a square crop-to-fill thumbnail (`thumbnail_size` px) is built once, here.
+        SVGs and animated GIFs are never converted, and SVGs get no thumbnail.
+
+        Limits: the effective max size is the smallest of `/settings`'s `max_upload_size`,
+        PHP's `upload_max_filesize` and PHP's `post_max_size`. Going over any of them gives
+        4002. The key's caps are checked before processing, against the raw upload size.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Must be the field named `file`. One file per request.
+                folder_uuid:
+                  type: string
+                  format: uuid
+                  description: Defaults to the key's root folder.
+                no_convert:
+                  type: string
+                  enum: ["1", "0"]
+                  description: >
+                    Images only. `1` keeps the original format (metadata is still stripped).
+                    PHP truthiness: any non-empty value except `0` counts as true, so `false`
+                    means *true*. Send `1`, or leave the field out.
+                tags:
+                  type: string
+                  description: Comma-separated tag names, e.g. `invoice,2026`.
+      responses:
+        "200": { $ref: "#/components/responses/FileOk" }
+        "400":
+          description: "No `file` field (4001), or the file is too large (4002)"
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+        "401":
+          description: "Bad/inactive/expired key (generic 401), or the key has a pending scheduled deletion (4014)"
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+        "403":
+          description: "Upload count cap reached (4031), or this file would exceed the storage cap (4032)"
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "415":
+          description: "Executable/script content, or the type could not be detected (4151)"
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+        "500": { $ref: "#/components/responses/ServerError" }
+
+  /file/{uuid}:
+    parameters:
+      - $ref: "#/components/parameters/Uuid"
+    get:
+      tags: [files]
+      operationId: getFile
+      summary: Get one file
+      responses:
+        "200": { $ref: "#/components/responses/FileOk" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [files]
+      operationId: renameFile
+      summary: Change a file's display name. Content, folder and URL path stay the same
+      description: >
+        An empty or missing `name` is silently ignored (200, unchanged file). Names don't
+        have to be unique. On the local storage driver the new name shows up in `url`'s
+        `filename=` query string. The path part of `url` never changes.
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema: { $ref: "#/components/schemas/NameBody" }
+          application/json:
+            schema: { $ref: "#/components/schemas/NameBody" }
+      responses:
+        "200": { $ref: "#/components/responses/FileOk" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [files]
+      operationId: deleteFile
+      summary: Delete a file from storage and the database
+      description: >
+        Removes the stored object and its thumbnail, detaches its tags, deletes its shares and
+        lowers the key's `total_size`. `uses` is never lowered. Once this returns, every URL
+        of the file stops working (subject to any CDN cache in front of the bucket).
+      responses:
+        "200": { $ref: "#/components/responses/DeletedOk" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/ServerError" }
+
+  /file/{uuid}/tags:
+    post:
+      tags: [tags]
+      operationId: attachTag
+      summary: Attach a tag (created if it doesn't exist; attaching twice is a no-op)
+      parameters:
+        - $ref: "#/components/parameters/Uuid"
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema: { $ref: "#/components/schemas/NameBody" }
+          application/json:
+            schema: { $ref: "#/components/schemas/NameBody" }
+      responses:
+        "200": { $ref: "#/components/responses/FileOk" }
+        "400":
+          description: "Empty tag name (4008)"
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /file/{uuid}/tags/{tag}:
+    delete:
+      tags: [tags]
+      operationId: detachTag
+      summary: Detach a tag by name
+      description: >
+        The router lowercases the whole path, so `{tag}` arrives lowercased. Under MySQL's
+        default case-insensitive collation it still matches. A tag that exists but isn't on
+        this file is a no-op (200). A tag name nobody has ever used is 4044. A name with `/`,
+        `?`, `#` or `&` can't be passed here, so stick to `[a-z0-9_-]` tag names.
+      parameters:
+        - $ref: "#/components/parameters/Uuid"
+        - name: tag
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/FileOk" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ---------------------------------------------------------------- shares (owner)
+
+  /shares:
+    get:
+      tags: [shares]
+      operationId: listShares
+      summary: Every share link this key owns, newest first
+      parameters:
+        - name: file_uuid
+          in: query
+          required: false
+          description: Only the links to this file.
+          schema: { type: string, format: uuid }
+        - name: folder_uuid
+          in: query
+          required: false
+          description: Only the links to this folder (not its descendants).
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/Share" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [shares]
+      operationId: createShare
+      summary: Create a public link to one file or one folder
+      description: >
+        Exactly one of `file_uuid` / `folder_uuid`. Sending both, or neither, is a 4001.
+        Sharing the same target twice gives two independent links. The key's root folder can
+        be shared too ("All files"). Links never expire.
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema: { $ref: "#/components/schemas/ShareCreate" }
+          application/json:
+            schema: { $ref: "#/components/schemas/ShareCreate" }
+      responses:
+        "200":
+          description: Created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/Share" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /share/{uuid}:
+    delete:
+      tags: [shares]
+      operationId: deleteShare
+      summary: Delete a share link
+      description: >
+        Stops the share page and the public share routes. File URLs that someone already
+        copied keep working, because they're served straight from storage. Only deleting the
+        file stops those.
+      parameters:
+        - $ref: "#/components/parameters/Uuid"
+      responses:
+        "200": { $ref: "#/components/responses/DeletedOk" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ---------------------------------------------------------------- shares (public)
+
+  /shared/{uuid}:
+    get:
+      tags: [public-shares]
+      operationId: openShare
+      summary: Open a share link (no Authorization header)
+      description: >
+        The share uuid in the path is the whole credential. Unknown, deleted, and
+        owner-inactive/expired/pending-deletion links all give the same 4045, so a visitor
+        learns nothing about the owner's account. Each successful call counts one view.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Uuid"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/PublicShare" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /shared/{uuid}/folder/{folder_uuid}:
+    get:
+      tags: [public-shares]
+      operationId: browseSharedFolder
+      summary: Browse into a folder inside a folder share (no Authorization header)
+      description: >
+        Limited to the shared subtree. A folder outside it, above it, belonging to another key,
+        or not existing at all gives the same 4042. Calling this on a file share is also 4042.
+        Each successful call counts one view.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Uuid"
+        - name: folder_uuid
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/SharedFolder" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+# ==================================================================== components
 
 components:
+
   securitySchemes:
     bearerKey:
       type: http
       scheme: bearer
-      description: The key's UUID, provisioned by an operator via the admin panel (there is no public key-creation endpoint).
+      description: >
+        The key's uuid, as given by the operator who created it in the admin panel. A
+        long-lived secret with full read/write/delete power over everything the key owns.
+        No login flow, no refresh, no scopes.
+
+  parameters:
+    Uuid:
+      name: uuid
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    FolderOk:
+      description: OK
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/SuccessEnvelope"
+              - type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Folder" }
+    FolderListOk:
+      description: OK
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/SuccessEnvelope"
+              - type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Folder" }
+    FileOk:
+      description: OK
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/SuccessEnvelope"
+              - type: object
+                properties:
+                  data: { $ref: "#/components/schemas/File" }
+    FileListOk:
+      description: OK
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/SuccessEnvelope"
+              - type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/File" }
+    DeletedOk:
+      description: Deleted
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/SuccessEnvelope"
+              - type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      deleted: { type: boolean, enum: [true] }
+    BadRequest:
+      description: "Invalid or missing input (4001-4008)"
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    Unauthorized:
+      description: >
+        Missing/malformed Authorization header, unknown key, inactive key or expired key. All
+        give the same body: `code: 401`, message `Authorization Failed! (IsAuthenticated = false)`.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+          example:
+            success: false
+            data:
+              type: unknown error
+              error: null
+              code: 401
+              message: Authorization Failed! (IsAuthenticated = false)
+    NotFound:
+      description: >
+        Folder (4042), file (4043), tag (4044) or share (4045) not found. Something owned by
+        another key is "not found" too, never 403.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+          example:
+            success: false
+            data:
+              type: exception
+              error: null
+              code: 4042
+              message: Folder not found
+    ServerError:
+      description: "Storage backend error (5001), image processing failure (5002), token generation exhausted (5003), bad server config (5004), or an unhandled error (no `code`)"
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
   schemas:
+
+    SuccessEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data: {}
+        _debug:
+          description: Only on instances running in the DEV environment.
+
+    ErrorEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, enum: [false] }
+        data:
+          type: object
+          properties:
+            code:
+              type: integer
+              description: >
+                Error code, see `GET /error-codes`. Missing on an unhandled 500, which only has
+                `message: "Internal Server Error"`.
+              example: 4001
+            message:
+              type: string
+              description: >
+                The code's message. Some errors add a detail after a colon, e.g.
+                `Missing required field: name`.
+              example: "Missing required field: name"
+            type:
+              type: string
+              description: "`exception` for application errors, `unknown error` for framework ones (auth, unknown route)."
+            error:
+              nullable: true
+              description: Extra error data. Usually null.
+            debug_level: { type: string }
+          additionalProperties: true
+
+    Timestamp:
+      type: string
+      pattern: '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$'
+      example: "2026-11-17 03:22:10"
+      description: Server-local time (`timezone` in magrathea.conf). No offset.
+
+    FileType:
+      type: string
+      enum: [image, audio, video, document, other]
+
+    Settings:
+      type: object
+      properties:
+        app_name: { type: string, example: Magrathea Explorer }
+        max_upload_size:
+          type: string
+          description: >
+            The configured cap, as a string, normally a byte count. The real limit may be
+            lower because PHP's own limits also apply.
+          example: "5242880"
+        max_upload_size_formatted: { type: string, example: "5 MB" }
+        thumbnail_size:
+          type: integer
+          description: Edge, in px, of the square image thumbnails.
+          example: 200
+
+    ChangelogEntry:
+      type: object
+      properties:
+        version: { type: string, example: "1.4.0" }
+        date: { type: string, nullable: true, example: "2026-11-17" }
+        changes:
+          type: array
+          items:
+            type: object
+            properties:
+              type: { type: string, enum: [new, fix, improvement, improvements] }
+              description: { type: string }
+
     Key:
       type: object
       properties:
         name: { type: string }
+        uses:
+          type: integer
+          description: Lifetime upload count. Never goes down, not even when files are deleted.
+        usage_limit:
+          type: integer
+          nullable: true
+          description: Cap on `uses` (lifetime uploads, not files currently stored). null = unlimited.
+        total_size:
+          type: integer
+          description: Bytes currently stored. Goes down when files are deleted.
+        usage_limit_mb:
+          type: integer
+          nullable: true
+          description: Cap on `total_size`, in MiB. null = unlimited.
+        expiration:
+          allOf: [{ $ref: "#/components/schemas/Timestamp" }]
+          nullable: true
+        active: { type: boolean }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+
+    KeyUsage:
+      type: object
+      properties:
         uses: { type: integer }
         usage_limit: { type: integer, nullable: true }
-        total_size: { type: integer, description: bytes currently stored }
+        total_size: { type: integer, description: bytes }
         usage_limit_mb: { type: integer, nullable: true }
-        expiration: { type: string, format: date-time, nullable: true }
-        active: { type: boolean }
-        created_at: { type: string, format: date-time }
+
     Folder:
       type: object
       properties:
         uuid: { type: string, format: uuid }
-        parent_uuid: { type: string, format: uuid, nullable: true }
-        name: { type: string }
+        parent_uuid:
+          type: string
+          format: uuid
+          nullable: true
+          description: null only for the root folder.
+        name:
+          type: string
+          description: The root folder's name is always `root`.
         is_root: { type: boolean }
-        created_at: { type: string, format: date-time }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+
+    FolderCreate:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          description: Trimmed. Must be unique among its siblings (4004).
+        parent_uuid:
+          type: string
+          format: uuid
+          description: Defaults to the key's root folder.
+
+    NameBody:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+
     File:
       type: object
       properties:
         uuid: { type: string, format: uuid }
         folder_uuid: { type: string, format: uuid }
-        name: { type: string }
-        extension: { type: string }
-        mime_type: { type: string }
-        file_type: { type: string, enum: [image, audio, video, document, other] }
-        size: { type: integer }
-        width: { type: integer, nullable: true }
-        height: { type: integer, nullable: true }
-        duration: { type: integer, nullable: true, description: seconds, audio/video only }
+        name:
+          type: string
+          description: >
+            Display name. On upload it's the client's original filename, extension included,
+            e.g. `photo.jpg` even after conversion to webp. Not unique.
+        extension:
+          type: string
+          description: >
+            Extension of the stored object, e.g. `webp` for a converted image. For
+            `file_type: other` it's the sniffed MIME subtype, so it can look odd
+            (`zip`, `octet-stream`, `x-7z-compressed`).
+        mime_type: { type: string, example: image/webp }
+        file_type: { $ref: "#/components/schemas/FileType" }
+        size:
+          type: integer
+          description: Stored bytes (after conversion), which may differ from the uploaded size.
+        width: { type: integer, nullable: true, description: Raster images only. }
+        height: { type: integer, nullable: true, description: Raster images only. }
+        duration:
+          type: integer
+          nullable: true
+          description: Seconds, audio/video only. null when the server can't read it.
         no_convert: { type: boolean }
-        url: { type: string }
-        thumbnail_url: { type: string, nullable: true }
-        tags: { type: array, items: { type: string } }
-        created_at: { type: string, format: date-time }
+        url:
+          type: string
+          description: >
+            Public, unauthenticated, direct-from-storage URL. Anyone holding it can download
+            the file until the file is deleted. Its path is
+            `{storage-base}/{key-storage-uuid}/{token}.{extension}` and never changes. On the
+            local driver it also carries `?disposition=inline|attachment&filename=<name>`.
+            Use it exactly as returned: don't build or parse it.
+          example: "https://files.example.com/0196b1d2-7f3e-7c4a-9b1e-2f6a8d4c1e90/Xk3pQ9vT2mLr8sWn4bYc7.webp"
+        thumbnail_url:
+          type: string
+          nullable: true
+          description: >
+            Square crop-to-fill thumbnail (jpg, or png for an unconverted png). Only for raster
+            images, null for everything else including SVG.
+        tags:
+          type: array
+          items: { type: string }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+
+    ShareCreate:
+      type: object
+      description: Exactly one of the two properties.
+      properties:
+        file_uuid: { type: string, format: uuid }
+        folder_uuid: { type: string, format: uuid }
+
     Share:
       type: object
-      description: Owner-facing view of one share link. No `id` -- int ids are not exposed anywhere in this API.
+      description: Owner-side view of one share link.
       properties:
-        uuid: { type: string, format: uuid, description: "The link secret AND the row's public identity -- holding it is the access check." }
-        url: { type: string, description: "app_url + /app/s/{uuid}, assembled per request rather than stored" }
+        uuid:
+          type: string
+          format: uuid
+          description: The link's identity AND its secret. Holding it is the whole access check.
+        url:
+          type: string
+          description: "`{app_url}/app/s/{uuid}`, the first-party public share page."
+          example: "https://explorer.example.com/app/s/0196b1d4-1a2b-7c3d-8e4f-5a6b7c8d9e0f"
         target_type: { type: string, enum: [file, folder] }
-        target_name: { type: string, description: "A shared root folder reports as \"All files\", never the literal row name \"root\"." }
+        target_name:
+          type: string
+          description: File or folder name. A shared root folder is reported as `All files`.
         file_uuid: { type: string, format: uuid, nullable: true }
         folder_uuid: { type: string, format: uuid, nullable: true }
-        views: { type: integer }
-        last_viewed_at: { type: string, format: date-time, nullable: true }
-        created_at: { type: string, format: date-time }
+        views:
+          type: integer
+          description: Successful public loads. Only the owner can see this.
+        last_viewed_at:
+          allOf: [{ $ref: "#/components/schemas/Timestamp" }]
+          nullable: true
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+
     SharedFile:
       type: object
       description: >
-        A strict subset of File, returned on the public share routes. Drops `folder_uuid`,
-        `no_convert` and `tags`. `url` is the same direct-from-storage link the owner gets --
-        deleting the share stops the share page but not that URL.
+        A strict subset of File: no `folder_uuid`, `no_convert` or `tags`. `url` is the same
+        direct-from-storage link the owner gets.
       properties:
         uuid: { type: string, format: uuid }
         name: { type: string }
         extension: { type: string }
         mime_type: { type: string }
-        file_type: { type: string, enum: [image, audio, video, document, other] }
+        file_type: { $ref: "#/components/schemas/FileType" }
         size: { type: integer }
         width: { type: integer, nullable: true }
         height: { type: integer, nullable: true }
         duration: { type: integer, nullable: true }
         url: { type: string }
         thumbnail_url: { type: string, nullable: true }
-        created_at: { type: string, format: date-time }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+
+    SharedFileShare:
+      type: object
+      properties:
+        type: { type: string, enum: [file] }
+        name: { type: string }
+        file: { $ref: "#/components/schemas/SharedFile" }
+
     SharedFolder:
       type: object
-      description: One folder inside a share. `path` starts at the share root and never includes a folder above it.
+      description: >
+        One folder inside a share. Subfolders and files are sorted by name (case-insensitive).
+        Nothing above the share root, and nothing identifying the owner, is ever included.
       properties:
         type: { type: string, enum: [folder] }
         name: { type: string }
         path:
           type: array
-          description: Breadcrumb from the share root (index 0) down to the folder being viewed.
+          description: Breadcrumb from the share root (index 0) down to this folder.
           items:
             type: object
             properties:
@@ -108,245 +1082,14 @@ components:
         files:
           type: array
           items: { $ref: "#/components/schemas/SharedFile" }
+
     PublicShare:
-      description: What a public share route returns -- a single file, or one folder's listing.
+      description: "`type` says which: a single file, or the share root folder's listing."
       oneOf:
+        - $ref: "#/components/schemas/SharedFileShare"
         - $ref: "#/components/schemas/SharedFolder"
-        - type: object
-          properties:
-            type: { type: string, enum: [file] }
-            name: { type: string }
-            file: { $ref: "#/components/schemas/SharedFile" }
-    Error:
-      type: object
-      properties:
-        success: { type: boolean, example: false }
-        data:
-          type: object
-          properties:
-            code: { type: integer }
-            message: { type: string }
-
-security:
-  - bearerKey: []
-
-paths:
-  /version:
-    get:
-      summary: API/framework version info
-      security: []
-      responses: { "200": { description: OK } }
-
-  /settings:
-    get:
-      summary: Public runtime settings (app name, max upload size, thumbnail size)
-      security: []
-      responses: { "200": { description: OK } }
-
-  /changelog:
-    get:
-      summary: Last 5 changelog entries
-      security: []
-      responses: { "200": { description: OK } }
-
-  /error-codes:
-    get:
-      summary: Full error code -> message map
-      security: []
-      responses: { "200": { description: OK } }
-
-  /key:
-    get:
-      summary: The caller's own key (self-service view, uuid never echoed back)
-      responses:
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Key" } } } }
-        "401": { description: Missing/invalid bearer token, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
-    delete:
-      summary: Schedules the key for deletion in 14 days (does not delete anything immediately)
-      responses: { "200": { description: Scheduled } }
-
-  /key/usage:
-    get:
-      summary: uses/usage_limit/total_size/usage_limit_mb only
-      responses: { "200": { description: OK } }
-
-  /key/cancel-deletion:
-    post:
-      summary: Cancels a pending scheduled deletion
-      responses:
-        "200": { description: Cancelled }
-        "404": { description: No pending deletion to cancel }
-
-  /folders:
-    get:
-      summary: List the direct children of ?parent_uuid=, or the key's root folder's children when omitted
-      parameters:
-        - { name: parent_uuid, in: query, schema: { type: string, format: uuid } }
-      responses:
-        "200":
-          description: OK
-          content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Folder" } } } }
-    post:
-      summary: Create a folder
-      requestBody:
-        content:
-          application/x-www-form-urlencoded:
-            schema:
-              type: object
-              properties:
-                name: { type: string }
-                parent_uuid: { type: string, format: uuid, description: "defaults to the key's root folder" }
-              required: [name]
-      responses: { "200": { description: Created } }
-
-  /folder/{uuid}:
-    parameters: [{ name: uuid, in: path, required: true, schema: { type: string, format: uuid } }]
-    get:
-      summary: Get one folder
-      responses:
-        "200": { description: OK }
-        "404": { description: Not found (or belongs to another key) }
-    put:
-      summary: Rename a folder
-      responses: { "200": { description: OK } }
-    delete:
-      summary: Delete an empty, non-root folder
-      responses:
-        "200": { description: Deleted }
-        "400": { description: Folder not empty, or is a root folder }
-
-  /folder/{uuid}/size:
-    get:
-      summary: Recursive subtree byte total
-      parameters: [{ name: uuid, in: path, required: true, schema: { type: string, format: uuid } }]
-      responses: { "200": { description: OK } }
-
-  /files:
-    get:
-      summary: List files in ?folder_uuid=, or the key's root folder when omitted
-      parameters:
-        - { name: folder_uuid, in: query, schema: { type: string, format: uuid, description: "defaults to the key's root folder" } }
-        - { name: file_type, in: query, schema: { type: string, enum: [image, audio, video, document, other] } }
-        - { name: tag, in: query, schema: { type: string } }
-      responses:
-        "200":
-          description: OK
-          content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/File" } } } }
-    post:
-      summary: Upload a file (multipart/form-data)
-      requestBody:
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              properties:
-                file: { type: string, format: binary }
-                folder_uuid: { type: string, format: uuid, description: "defaults to the key's root folder" }
-                no_convert: { type: boolean, description: "images only: skip webp conversion (metadata is always stripped regardless)" }
-                tags: { type: string, description: comma-separated tag names }
-              required: [file]
-      responses:
-        "200": { description: Uploaded, content: { application/json: { schema: { $ref: "#/components/schemas/File" } } } }
-        "413": { description: File too large }
-        "415": { description: Unsupported or dangerous file type }
-        "403": { description: Upload count or storage size limit reached }
-
-  /file/{uuid}:
-    parameters: [{ name: uuid, in: path, required: true, schema: { type: string, format: uuid } }]
-    get:
-      summary: Get one file
-      responses: { "200": { description: OK }, "404": { description: Not found } }
-    put:
-      summary: Rename a file's display name
-      responses: { "200": { description: OK } }
-    delete:
-      summary: Delete a file from storage and the database
-      responses: { "200": { description: Deleted } }
-
-  /file/{uuid}/tags:
-    post:
-      summary: Attach a tag (created if it doesn't exist)
-      parameters: [{ name: uuid, in: path, required: true, schema: { type: string, format: uuid } }]
-      requestBody:
-        content:
-          application/x-www-form-urlencoded:
-            schema: { type: object, properties: { name: { type: string } }, required: [name] }
-      responses: { "200": { description: OK } }
-
-  /file/{uuid}/tags/{tag}:
-    delete:
-      summary: Detach a tag by name
-      parameters:
-        - { name: uuid, in: path, required: true, schema: { type: string, format: uuid } }
-        - { name: tag, in: path, required: true, schema: { type: string } }
-      responses: { "200": { description: OK } }
-
-  /shares:
-    get:
-      summary: Every share link this key owns, newest first
-      parameters:
-        - { name: file_uuid, in: query, schema: { type: string, format: uuid }, description: "narrow to one file's links" }
-        - { name: folder_uuid, in: query, schema: { type: string, format: uuid }, description: "narrow to one folder's links" }
-      responses:
-        "200":
-          description: OK
-          content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Share" } } } }
-    post:
-      summary: Mint a share link for one file or one folder
-      requestBody:
-        content:
-          application/x-www-form-urlencoded:
-            schema:
-              type: object
-              description: Exactly one of the two -- both or neither is a 4001.
-              properties:
-                file_uuid: { type: string, format: uuid }
-                folder_uuid: { type: string, format: uuid }
-      responses:
-        "200":
-          description: Created
-          content: { application/json: { schema: { $ref: "#/components/schemas/Share" } } }
-        "400": { description: "Both or neither target given (4001)" }
-        "404": { description: "Target not found, or belongs to another key (4042/4043)" }
-
-  /share/{uuid}:
-    delete:
-      summary: Delete a share link
-      description: >
-        Stops the share page working. Direct storage URLs for the shared files that someone
-        already copied keep working -- only deleting the file itself stops those.
-      parameters: [{ name: uuid, in: path, required: true, schema: { type: string, format: uuid } }]
-      responses:
-        "200": { description: Deleted }
-        "404": { description: "Not found, or belongs to another key (4045)" }
-
-  /shared/{uuid}:
-    get:
-      summary: Open a share link (public -- no Authorization header)
-      description: >
-        The uuid in the path is the whole credential. An unknown uuid, a deleted share, or a
-        share whose key is inactive/expired/pending deletion all collapse to the same 4045, so
-        a visitor learns nothing about the owner's account state. Counts a view on success only.
-      security: []
-      parameters: [{ name: uuid, in: path, required: true, schema: { type: string, format: uuid } }]
-      responses:
-        "200":
-          description: OK
-          content: { application/json: { schema: { $ref: "#/components/schemas/PublicShare" } } }
-        "404": { description: "This link is not valid (4045)" }
-
-  /shared/{uuid}/folder/{folder_uuid}:
-    get:
-      summary: Browse into a shared folder (public -- no Authorization header)
-      description: >
-        Clamped to the shared subtree: a folder outside it, above it, or belonging to another
-        key all return 4042, the same as one that doesn't exist. Only valid on a folder share.
-      security: []
-      parameters:
-        - { name: uuid, in: path, required: true, schema: { type: string, format: uuid } }
-        - { name: folder_uuid, in: path, required: true, schema: { type: string, format: uuid } }
-      responses:
-        "200":
-          description: OK
-          content: { application/json: { schema: { $ref: "#/components/schemas/SharedFolder" } } }
-        "404": { description: "Folder not found or outside this share (4042); link not valid (4045)" }
+      discriminator:
+        propertyName: type
+        mapping:
+          file: "#/components/schemas/SharedFileShare"
+          folder: "#/components/schemas/SharedFolder"

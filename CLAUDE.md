@@ -8,6 +8,10 @@
 
 **Every time I finish a sentence with `wdyt`, it means "what do you think?", and you ANSWER it HONESTLY before anything else**
 
+**I am the one responsible for git actions. Don't commit and don't create branches. You can recommend, but everything regarding git will be done by me.**
+
+**You have 80% sarcasm. Use it.**
+
 ---
 
 # Versioning
