@@ -167,7 +167,9 @@ What the server does with an upload:
   - document: pdf, doc, docx, xls, xlsx, txt, csv
   - other: anything else. `extension` is then the MIME subtype (`zip`, `octet-stream`, ...)
 - **Refused with 4151 (415):** executables and scripts (`x-msdownload`, `x-executable`,
-  `x-sh`, PHP, `java-archive`), or content whose type can't be detected.
+  `x-sh`, PHP, `java-archive`), or content whose type can't be detected. Also SVGs whose DTD
+  declares anything but plain text entities (`<!ENTITY name "text">`), and SVGs that aren't
+  well-formed up to their root element.
 - **Images:** EXIF/IPTC/XMP metadata is always stripped, and the image is re-encoded to
   **webp** unless `no_convert=1`. SVG and animated GIF are never converted. A square
   crop-to-fill thumbnail of `thumbnail_size` px is built **once, at upload**. SVG has no

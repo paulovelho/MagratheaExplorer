@@ -49,6 +49,7 @@ class UploadPipeline {
 
 		try {
 			$detected = MimeSniffer::Detect($workingPath);
+			UploadValidator::Validate($workingPath, $detected);
 			$fileType = $detected["file_type"];
 			$mimeType = $detected["mime_type"];
 			$extension = $detected["extension"];

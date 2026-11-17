@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.5.0
+unreleased
+- **fix:** Security: an uploaded SVG could read any file on the server the PHP user can read.
+  SVG metadata stripping parsed with entity substitution on, so an SVG declaring an external
+  entity (`<!ENTITY x SYSTEM "file:///…">`) was stored with that file's contents inlined,
+  `configs/` included. Substitution is off now. An SVG whose DTD declares anything but plain
+  text entities (external or parameter entities, nested or character references, other
+  declarations), or that libxml can't read up to its root element, is refused with 4151, on
+  every upload path. Plain entities, as old Illustrator exports write them, still upload.
+  After upgrading a 1.4.x instance, search the stored `.svg` files for `<!ENTITY` (attempts
+  keep their DOCTYPE): if any turn up, rotate the DB password and the storage keys.
+
 ## 1.4.0
 2026-11-17
 - **improvement:** Runs on MagratheaPHP 3 (`platypustechnology/magratheaphp`, namespace

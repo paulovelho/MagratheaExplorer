@@ -248,7 +248,11 @@ class MetadataStripper {
 
 		$doc = new \DOMDocument();
 		$previous = libxml_use_internal_errors(true);
-		$loaded = $doc->loadXML($content, LIBXML_NONET | LIBXML_NOENT);
+		// Never add LIBXML_NOENT: it substitutes entities, so `<!ENTITY x SYSTEM "file://...">`
+		// would inline a server file into the stored SVG (XXE, fixed in 1.5.0). Entity
+		// references stay references. UploadValidator has already refused anything but plain
+		// entities.
+		$loaded = $doc->loadXML($content, LIBXML_NONET);
 		libxml_use_internal_errors($previous);
 		if (!$loaded) return false;
 

@@ -5,12 +5,16 @@ processing pipeline). Everything ships together as **1.5.0** but is built in pha
 leaves the branch working, with its own docs, and can be reviewed by itself.
 
 Written against the working tree on `version/1.4.1`, which holds the unmerged **1.4.0**
-(MagratheaPHP 3) work. Nothing below is implemented yet.
+(MagratheaPHP 3) work.
+
+**Status (2026-11-17):** done: §1.4 (test harness), §2.0 (XXE fix), and §2.4's version bump.
+Everything else is open. Phase 1 is **not** finished: §2.1–2.3 (boolean parsing) remain.
 
 Every decision is settled (2026-11-17): the XXE fix ships in 1.5.0 (§2.0), oversize
 non-verbatim images → 413 (§3.4), renditions don't count toward usage (§7.9), there are no
-video/PDF handlers (§8), and public share links show only `thumbnail_url` (§7.7). The one open
-input left is the DreamHost check (§1.2), which picks the processor engine.
+video/PDF handlers (§8), and public share links show only `thumbnail_url` (§7.7). The DreamHost
+check ran (§1.2): the engine is pyvips. **Open:** the processor written in Python (recommended)
+or Imagick to keep the project PHP-only (§1.2).
 
 ---
 
@@ -32,7 +36,7 @@ keys).
 
 **Fix:** drop `LIBXML_NOENT`, and refuse (4151) any SVG with a `<!DOCTYPE` that declares
 entities. **Decided: no separate patch. It ships with 1.5.0, as the first item of Phase 1
-(§2.0).** Until then, the exposure is every key holder. Any key held by a party that isn't
+(§2.0).** **✅ Implemented (§2.0).** Until 1.5.0 is deployed, the exposure is every key holder. Any key held by a party that isn't
 fully trusted should be disabled until 1.5.0 is deployed.
 
 Forensics, after deploying: `saveXML()` keeps the DOCTYPE, so any stored `.svg` containing
@@ -134,20 +138,57 @@ My expectation, unverified: Q16 ImageMagick needs about 840 MB of pixel cache fo
 so it spills to disk under those limits and takes minutes, which is exactly what the watcher
 kills. Don't build Phase 5 until this has run.
 
+**Results so far (2026-11-17, quick run on `iad1-shared-e1-19`, interactive):**
+- `proc_open` & co usable. CLI `/usr/local/php84/bin/php` (8.4.27), CLI `memory_limit` 128M.
+- Imagick 3.8.1 / ImageMagick **6.9.12-98 Q16**, PNG + WEBP. Default thread limit already 1.
+- `MAGICK_CONFIGURE_PATH` through `proc_open`'s env: **honored** (a deny-PNG policy blocked
+  the read). The system `policy.xml` denies **nothing**, so the processor's own policy is required,
+  not optional.
+- Python 3.12.3 (Ubuntu 24.04, PEP 668): pyvips installed in a venv,
+  `~/explorer-venv` → **pyvips 3.2.0 / libvips 8.18.7**. A pyvips engine's `processor_command`
+  would be `["/home/platypusweb/explorer-venv/bin/python", ".../processor.py"]`.
+- crontab: lines below `###--- END DREAMHOST BLOCK` are preserved. `setlock` is available.
+  Found while looking: **no `cron.php --run` line**, so scheduled key deletions never run on
+  this instance (reported 2026-11-17).
+- ulimits all unlimited (128 CPUs, 450 GB): the watcher is the only limit, and only the
+  cron `--heavy` run can show it.
+- **Heavy run, from cron** (generated 10759×9759 RGBA 8-bit, 14 MB → 1200 px webp, single thread):
+
+  | engine | wall | CPU | peak RSS |
+  |---|---|---|---|
+  | Imagick, memory 128 / map 256 / disk 4096 MB | 7.98 s | 3.57 s | 316 MB |
+  | Imagick, no limits | 3.18 s | 2.84 s | 1,119 MB (not killed) |
+  | **pyvips**, `VIPS_CONCURRENCY=1` | **1.54 s** | **1.36 s** | **127 MB** |
+
+  - Imagick's `memory` limit doesn't cap RSS: map is RAM too.
+  - The watcher tolerated a 1.1 GB, 3 s spike. Its threshold for sustained use is still unknown,
+    and it doesn't matter at pyvips' 127 MB.
+- **Engine #1: pyvips.** ⚠ DECISION (open): processor written in Python (recommended), or
+  Imagick to keep the project PHP-only. §6 assumes Python.
+- Still to check by hand: every-minute cron (DreamHost policy) and a 150 MB upload through the
+  front proxy (do it in Phase 4).
+
 Also check: is every-minute cron allowed on the plan? Queue latency equals the cron interval.
 And does a **150 MB upload** through DreamHost's front proxy survive (body size and timeouts),
 not just PHP's limits?
 
 ### 1.3 Dev environment
 
-- `docker/Dockerfile`: add `imagick` (and `vips` if 1.2 points there).
+- `docker/Dockerfile`: `python3` + `python3-venv`, and a venv with `pyvips[binary]` (the same
+  wheel as the server, not a distro libvips, so dev and prod run the same libvips build).
 - `docker/php.ini`: `memory_limit=512M`, the same as servers, so dev hits the same OOMs.
-- `.gitignore`: `api/tmp/` (processor job dirs).
+- `.gitignore`: `api/tmp/` (processor job dirs). **Done.**
 
-### 1.4 Test harness
+### 1.4 Test harness ✅ done (with §2.0)
 
-- `api/phpunit.xml` + `api/tests/` (bootstrap `vendor/autoload.php`; DB mocked per the
-  framework's `Database::Mock()` where needed).
+- `api/phpunit.xml` + `api/tests/`. Run from `api/`: `vendor/bin/phpunit`.
+- Bootstrap: `tests/bootstrap.php` requires **`src/_autoload.php`**, not `vendor/autoload.php`.
+  Composer's autoloader alone can't load app classes, because Magrathea's autoloader only knows
+  the folders registered in the bootstrap. The code-folder list moved out of `_inc.php` into
+  `_autoload.php`, so `_inc.php` and the tests share one list. The bootstrap also sets an empty
+  `test` environment: `magrathea.conf` is never read. A test that needs config keys or the DB
+  sets them up itself (`Config::SetConfig`, `Database::Mock()`).
+- `failOnWarning`, `failOnRisky`, `failOnEmptyTestSuite`; no result cache (nothing to gitignore).
 - Unit tests go here: boolean parser, rendition-profile validator, size parsing.
 - Processor contract fixtures run outside phpunit (§6.6) so that they also run on the server.
 
@@ -155,17 +196,45 @@ not just PHP's limits?
 
 ## 2. Phase 1: XXE fix + boolean parsing (§3.1, part)   [S]
 
-### 2.0 SVG XXE (§0.1): first commit of the branch
+### 2.0 SVG XXE (§0.1): first commit of the branch ✅ done
 
-- `MetadataStripper::StripSvg()`: flags `LIBXML_NONET` only. **No `LIBXML_NOENT`.**
-- Before parsing, refuse (4151, "SVG with entity declarations") any SVG whose DOCTYPE has an
-  internal subset (`<!DOCTYPE … [`) or an `<!ENTITY`. Do this check with a cheap scan of the
-  prolog, not with the parser.
-- Verbatim SVGs (Phase 2) skip the stripper, so nothing gets expanded. They're stored raw and
-  served as `attachment`, as today. Even so, run the same refusal **before** the verbatim branch,
-  so the rule doesn't depend on which path an upload takes.
-- Regression fixture: `fixtures/xxe.svg` (§6.6) must be refused on both paths.
-- Changelog **fix:** under 1.5.0.
+- `MetadataStripper::StripSvg()`: flags `LIBXML_NONET` only. **No `LIBXML_NOENT`.** A comment
+  there says why it must never come back.
+- New `features/File/UploadValidator.php`. `Validate($path, $detected)` is called in
+  `UploadPipeline::Handle()` right after `MimeSniffer::Detect()`, before any processing.
+  Phase 2's verbatim branch is therefore covered with no extra work, and so is `ImportPipeline`
+  (it goes through `Handle()`). It holds one `match` arm per type that needs a check.
+  Future pre-processing content checks go there, not in `MimeSniffer` or `MetadataStripper`.
+  `Strip()` catches every `Throwable`, so a refusal inside it would be silently swallowed.
+- SVG rule. **Deviation: libxml, not a byte scan of the prolog.** A byte scan is bypassable,
+  verified on PHP 8.4.27 / libxml 2.9.14: a UTF-16 SVG is still sniffed as `image/svg+xml`, the
+  old code leaked through it, and its bytes contain no ASCII `<!DOCTYPE`. Padding the prolog with
+  a long comment defeats any fixed-size window. The check works like this instead:
+  - `XMLReader` streams the prolog (`LIBXML_NONET` only: no substitution, no external DTD) and
+    stops at the root element, so memory stays flat at any file size.
+  - It takes libxml's **own serialization** of the DOCTYPE (`readOuterXml()`): UTF-8 and
+    normalized, whatever the file's encoding.
+  - The internal subset is checked against a whitelist. **Decided: plain entities pass**, so
+    old Illustrator exports (`<!ENTITY ns_svg "http://…">`) keep uploading. A plain entity is
+    `<!ENTITY name "text">` with no `&`, `%` or `<` in the value, at most 1 KB per value and
+    64 KB per subset. Comments are ignored. Anything else (`SYSTEM`/`PUBLIC`/`NDATA`, parameter
+    entities, nested or character references, `ATTLIST`/`ELEMENT`, PIs) → 4151 `"SVG DTD
+    declarations other than plain entities"`.
+  - **Fails closed:** an SVG libxml can't read up to its root element → 4151 `"SVG not
+    well-formed"`. When libxml fails, the reader errors out before it returns the DOCTYPE, so
+    what can't be inspected isn't stored. An SVG broken only *after* its first chunk still goes
+    through as before (the stripper fails and the file is stored raw), which is harmless.
+- Tests: `api/tests/File/UploadValidatorTest.php` (accepted/refused fixtures, UTF-16, 2 MB
+  comment padding, oversized value) and `MetadataStripperSvgTest.php`. The stripper is tested
+  **with the validator bypassed**: `SYSTEM` entity, parameter entity, external DTD and UTF-16,
+  each pointed at a secret file written at run time, must never be expanded. Fixtures in
+  `api/tests/fixtures/svg/` (text only; the UTF-16 and padded variants are built at run time).
+  19 tests green. Not done: a mutation run with `LIBXML_NOENT` put back, to see the stripper
+  tests fail.
+- Changelog **fix:** under 1.5.0 (written). Docs: the 4151 list in `docs/skills.md` and the
+  `POST /files` description in `docs/openapi.yaml`.
+- Server check before deploying: `XMLReader` (ext-xmlreader) has to be loaded in the **web**
+  PHP on DreamHost (`php -m` doesn't show the web SAPI). Without it, every SVG upload is a 500.
 
 ### 2.1 New: `api/src/shared/RequestBool.php`
 
@@ -189,10 +258,16 @@ public static function Parse(array $input, string $field): ?bool
 `error_codes.conf`: `4009 = "Invalid boolean value"`. `api/cache/error_codes.json` is a cache of
 `/error-codes`: clear it on deploy (it's already in the "Updating an instance" steps, or add it).
 
-### 2.4 Version bump (start of the 1.5.0 work)
+### 2.4 Version bump (start of the 1.5.0 work) ✅ bump done (with §2.0)
 
 Bump `api/version` and `docs/openapi.yaml` `version:` to `1.5.0` now, and open `## 1.5.0` in
-`api/changelog.md` with the date left as `unreleased` until the release. Every phase appends
+`api/changelog.md` with the date left as `unreleased` until the release. **Done:** all three
+bumped, with `## 1.5.0` / `unreleased` holding the §2.0 entry. The boolean entry below comes
+with §2.1.
+
+Found while doing it: the `changelog` endpoint's parser keeps only the **first line** of each
+entry and drops the wrapped continuation lines, so every multi-line entry (all of 1.4.0's) is
+served cut off. Not fixed; worth a **fix:** of its own. Every phase appends
 its own entries. The boolean entry is **breaking:** `no_convert=false` was true; unknown
 values are now a 400.
 
@@ -360,14 +435,17 @@ Not wired into uploads yet. It's a CLI program with a contract and a fixture sui
 
 ```
 api/processor/
-  imagick/processor.php        engine #1 (or pyvips/processor.py, per §1.2)
-  imagick/policy.xml           restrictive ImageMagick policy
-  icc/sRGB.icc                 target for sRGB conversion (redistributable, e.g. Compact ICC Profiles, CC0: check the licence)
+  vips/processor.py            engine #1: pyvips (§1.2). libvips' built-in "srgb" profile, no .icc file needed
+  vips/requirements.txt        pyvips[binary]==<pinned>: the venv is rebuilt from it
   fixtures/                    committed fixture files + expected.json
-  fixtures/make-fixtures.php   regenerates them (dev only)
-  run-fixtures.php             contract runner: dev, CI and the server
+  fixtures/make-fixtures.py    regenerates them (dev only; pyvips + hand-written chunks where libvips can't: JFIF units 0, bomb IHDR)
+  run-fixtures.php             contract runner: dev, CI and the server. PHP, because it drives the engine exactly the way Explorer does (§6.3)
   diag/dreamhost-check.php     §1.2
 ```
+
+Venv location on the server: outside the repo (`~/explorer-venv`), rebuilt from
+`requirements.txt`. If DreamHost upgrades the system Python, the venv's interpreter disappears:
+`run-fixtures.php` fails loudly, and the fix is documented in `docs/deploy.md` (recreate the venv).
 
 ### 6.2 Configuration: `magrathea.conf`, never ConfigApp
 
@@ -375,7 +453,7 @@ The processor command **is a command line**. ConfigApp is editable from the admi
 command there would turn any admin login into shell access. Per environment section:
 
 ```ini
-processor_command      = '["/usr/local/php84/bin/php","/home/u/explorer/api/processor/imagick/processor.php"]'  ; argv, JSON
+processor_command      = '["/home/u/explorer-venv/bin/python","/home/u/explorer/api/processor/vips/processor.py"]'  ; argv, JSON
 processing_tmp_path    = "/home/u/explorer/api/tmp"
 processor_timeout_s    = "120"
 processor_memory_mb    = "128"
@@ -395,7 +473,7 @@ until §1.2 has run.
 ### 6.3 Runner, Explorer side: `api/src/features/Processing/ProcessorRunner.php`
 
 - `proc_open($argv, …)` with an **array** (no shell), and an env carrying
-  `MAGICK_CONFIGURE_PATH`, `MAGICK_TEMPORARY_PATH` and a minimal `PATH`.
+  `VIPS_CONCURRENCY=1`, `TMPDIR` (inside `processing_tmp_path`) and a minimal `PATH`.
 - Write the job JSON to stdin and close it. Drain stdout **and** stderr non-blocking with
   `stream_select` (a chatty stderr would otherwise deadlock the pipe).
 - Wall-clock timeout: `proc_terminate($p, 9)`, result `failed: "time limit exceeded"`.
@@ -414,10 +492,26 @@ The blueprint's JSON (§3.4.1), plus one field:
 
 Engine rules, all fixture-tested:
 
-- The decoder is forced from the sniffed type (`png:/path`).
+- The loader is forced from the sniffed type (`pyvips.Image.pngload(path)`, `jpegload`, …),
+  never `new_from_file`, which sniffs on its own.
 - `width`/`height` are the stored size, before orientation.
-- `dpi_x`/`dpi_y` come from pHYs / JFIF / EXIF, **null when not declared**. ImageMagick reports
-  72 for a JPEG whose JFIF units are 0. If it lies, the engine parses the header itself.
+- `dpi_x`/`dpi_y` come from pHYs / JFIF / EXIF, **null when not declared**. libvips stores
+  resolution in **pixels per mm** (×25.4 for DPI) and fills in a default when the file declares
+  none, so it can't tell "absent" from "set". The engine reads pHYs / JFIF density itself
+  (a few header bytes).
+- Properties via libvips:
+  - `bit_depth` from `format` (`uchar` = 8, `ushort` = 16);
+  - `has_alpha_channel` from `hasalpha()`;
+  - `color_space` from `interpretation`;
+  - `has_icc_profile` from the `icc-profile-data` field;
+  - `orientation` from the `orientation` field;
+  - `frame_count` from `n-pages`;
+  - `is_opaque` from a sequential full-resolution pass, alpha band `min() == max value`.
+    Never from a downscaled copy: averaging hides single semi-transparent pixels.
+- Renditions: `thumbnail()` with `size="down"`, `crop="centre"` for `cover`, auto-rotate,
+  `export_profile="srgb"`, then save with no metadata. Each `thumbnail()` call decodes the PNG
+  again (PNG has no shrink-on-load), so ~1.5 s per rendition at 105 MP (§1.2). Budget about 5 s
+  per print file: it's `cron_process_max_s` that bounds a cron run, not the file count.
 - Renditions:
   - EXIF orientation is applied;
   - converted to sRGB when an ICC profile is present;
@@ -435,16 +529,24 @@ otherwise. That's today's rule from §0.4.
 
 ### 6.5 Security (§3.4.7)
 
-- `policy.xml`:
-  - deny coders `MVG MSL URL HTTP HTTPS EPHEMERAL TEXT PS EPS PDF XPS SVG MSVG`;
-  - deny `delegate *`, `path @*`;
-  - set resource limits.
-
-  §1.2 checks that the server actually honors it.
-- Imagick `setResourceLimit()` for memory, map, disk and area, with temp inside the account.
-- SVG handler: properties only (root `width`/`height`/`viewBox`), with `XMLReader`, **no
-  `LIBXML_NOENT`**, and DOCTYPE refused. SVG is never rasterized.
+libvips takes the place of the blueprint's Imagick rules:
+- `pyvips.block_untrusted_set(True)`, then block **every** loader
+  (`operation_block_set("VipsForeignLoad", True)`) and unblock only `pngload`, `jpegload`,
+  `webpload`, `gifload`, plus the bmp loader if the wheel has one. This is the libvips version of a
+  restrictive `policy.xml`. In particular, `svgload` (librsvg) and `magickload` stay blocked if
+  the wheel ships them.
+- Loader forced from the sniffed type (§6.4).
+- Memory cap enforced by the processor on itself: `resource.setrlimit(RLIMIT_DATA, processor_memory_mb)`
+  at startup. The `max_pixels` fixture (§6.6) checks that a real file fits under it.
+- `VIPS_CONCURRENCY=1`, `TMPDIR` inside the account.
+- SVG handler: properties only (root `width`/`height`/`viewBox`), with Python's XML parser and
+  entities disabled (`defusedxml`-style: DOCTYPE refused). SVG is never rasterized.
 - ffmpeg / Ghostscript: not used in 1.5.0 (§8).
+
+If the decision in §1.2 goes to Imagick instead: `policy.xml` (deny
+`MVG MSL URL HTTP HTTPS EPHEMERAL TEXT PS EPS PDF XPS SVG MSVG`, `delegate *`, `path @*`),
+shipped via `MAGICK_CONFIGURE_PATH` (honored on DreamHost, §1.2), plus `setResourceLimit()` with
+memory + map counted together (the 128 MB limit measured 316 MB of RSS).
 
 ### 6.6 Contract fixtures
 
@@ -463,7 +565,7 @@ dimensions, mime type and has-alpha.
 | `animated.gif` | `animated=true`, `frame_count`; rendition = frame 0 |
 | `bomb-header.png` | IHDR claims 100000×100000, tiny file → refused without decoding |
 | `truncated.png` | non-zero exit with a message, nothing in `renditions` |
-| `xxe.svg` | refused by Explorer (4151) before the processor sees it, on both the verbatim and the stripped path (§2.0). An Explorer-side test, not a processor one |
+| `xxe.svg` | refused by Explorer (4151) before the processor sees it, on both the verbatim and the stripped path (§2.0). An Explorer-side test, not a processor one. ✅ Lives in `api/tests/fixtures/svg/` with the other SVG fixtures, covered by phpunit (§2.0) |
 | generated at run time | ~`max_pixels`-scale PNG via the streaming writer from §1.2 → finishes under `processor_memory_mb` |
 
 `run-fixtures.php` runs whatever `processor_command` is configured. **The same check runs on
@@ -691,7 +793,8 @@ A worker mid-job on a deleted file cleans up after itself (§7.5 step 6).
 - Merge the per-phase migration blocks into `api/database/migrations/1.5.0_tier1.sql`, ordered
   and commented like the earlier ones. Mirror everything in `database.sql`.
 - `docs/deploy.md`:
-  - server requirements (+ imagick or vips, `proc_open`);
+  - server requirements (+ Python 3 with `venv`, `proc_open`), and creating the venv
+  from `api/processor/vips/requirements.txt`;
   - processor config;
   - the `--process` cron line;
   - running `run-fixtures.php` after deploy;
@@ -736,17 +839,17 @@ A worker mid-job on a deleted file cleans up after itself (§7.5 step 6).
 
 ## 11. Phase order and size
 
-| Phase | Content | Size | Depends on |
-|---|---|---|---|
-| 0 | DreamHost check, dev env, harness | S | — |
-| 1 | **XXE fix**, boolean parsing, version bump | S | — |
-| 2 | verbatim + guards (+ orientation fix) | M | 1 |
-| 3 | sha256 + `fetch()` | S | — |
-| 4 | per-key upload limit | S | — |
-| 5 | processor + fixtures (standalone) | L | 0 (engine choice) |
-| 6 | schema, queue, renditions, regenerate, admin | L | 3 (`fetch`), 5 |
-| 7 | ~~optional handlers~~: cut, non-image files stay as-is (§8) | — | — |
-| 8 | migration file, docs, release | S | all |
+| Phase | Content | Size | Depends on | Status |
+|---|---|---|---|---|
+| 0 | DreamHost check, dev env, harness | S | — | check ✅ (manual items left), harness ✅, dev env (§1.3 Dockerfile/php.ini) open |
+| 1 | **XXE fix**, boolean parsing, version bump | S | — | XXE ✅, bump ✅, booleans (§2.1–2.3) open |
+| 2 | verbatim + guards (+ orientation fix) | M | 1 | open |
+| 3 | sha256 + `fetch()` | S | — | open |
+| 4 | per-key upload limit | S | — | open |
+| 5 | processor + fixtures (standalone) | L | 0 (engine choice) | open |
+| 6 | schema, queue, renditions, regenerate, admin | L | 3 (`fetch`), 5 | open |
+| 7 | ~~optional handlers~~: cut, non-image files stay as-is (§8) | — | — | cut |
+| 8 | migration file, docs, release | S | all | open |
 
 Phases 1–4 are independent of the engine question and can start while §1.2 is pending.
 
@@ -762,7 +865,9 @@ Phases 1–4 are independent of the engine question and can start while §1.2 is
 | §3.3 per-key limit | missing (instance-wide only) | effective limit also includes the PHP limits |
 | §3.4 pipeline | GD thumbnail only, sync, top-crop, black-on-transparent jpg | `mode` field in the job; default thumb same name/size/fit/format, different pixels; migrated thumbs have null dims; **regeneration mints new rendition URLs**; video/PDF handlers cut, non-image files get `none` (§8); renditions don't count toward usage, and rendition dimensions are capped at 2048 px (§7.9) |
 
-- §7 Q1: §0.2. Q2: §0.4. Q3: no, §7.9. Q5: §1.2, pending a run.
+- §7 Q1: §0.2. Q2: §0.4. Q3: no, §7.9. Q5: §1.2. Imagick works (8 s / 316 MB limited), but
+  the first engine is **pyvips** (1.5 s / 127 MB). That's a deviation from "the first
+  implementation is a PHP CLI script using Imagick", and it's invisible to Turbopod (same contract).
 - §7 Q4 (consumers): only the boolean fix can affect anyone, and only a consumer that sends
   `no_convert`. Grep the other projects for `no_convert`. The explorer app doesn't send it.
 - §7 Q6 (storage driver of Turbopod's instance): doesn't change this plan, which supports both
@@ -784,12 +889,13 @@ Phases 1–4 are independent of the engine question and can start while §1.2 is
 
 ## 14. Risks
 
-- **The engine on DreamHost** (§1.2). If Imagick can't do 105 MP under the watcher, engine #1
-  is pyvips. That's a Python processor, but the contract and fixtures don't change. That's the
-  point of §6.
-- **`MAGICK_CONFIGURE_PATH` ignored** by the system ImageMagick: then the policy has to be
-  enforced in code (coder allowlist before `readImage`, the forced decoder prefix) and the plan
-  can't count on the XML.
+- ~~The engine on DreamHost~~: **retired**. pyvips does 105 MP in 1.5 s / 127 MB from cron (§1.2).
+- **Python in a PHP project.** The venv depends on the system Python. A DreamHost OS or Python
+  upgrade breaks it, and every upload then ends up `failed` until it's rebuilt. Mitigations:
+  `run-fixtures.php` after every deploy and server change, failures visible on the admin queue
+  page, a pinned `requirements.txt`, and the rebuild steps in `docs/deploy.md`.
+- ~~`MAGICK_CONFIGURE_PATH` ignored~~: **retired**. Honored on DreamHost (§1.2 results). The
+  coder allowlist and the forced decoder prefix stay anyway, as defense in depth.
 - **Cron granularity**: if DreamHost only allows coarse intervals, `pending` lasts that long.
   Turbopod polls, so it's latency, not breakage.
 - **Default-thumbnail pixel changes** are visible in the explorer app for new uploads (center

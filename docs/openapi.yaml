@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Magrathea Explorer
-  version: "1.4.0"
+  version: "1.5.0"
   description: |
     Self-hosted file hosting API (image / audio / video / document / other), with obfuscated
     direct-from-storage URLs and one storage driver per instance (local disk, S3 or R2).
@@ -413,7 +413,8 @@ paths:
       summary: Upload one file
       description: |
         The real type comes from sniffing the content, never from the client's filename or
-        Content-Type. Executables and scripts are refused (4151). Anything the server doesn't
+        Content-Type. Executables and scripts are refused (4151), and so are SVGs whose DTD
+        declares anything but plain text entities, or that aren't well-formed. Anything the server doesn't
         recognize is stored as `file_type: other` and always served as a download.
 
         Images: metadata is always stripped. They're re-encoded to webp unless `no_convert` is
