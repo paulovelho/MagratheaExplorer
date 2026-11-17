@@ -2,7 +2,7 @@
 
 namespace MagratheaExplorer\File;
 
-use Magrathea2\DB\Database;
+use Magrathea\DB\Database;
 
 /**
  * Plain static class over the `file_tags` join table -- no Model/Control pair, since

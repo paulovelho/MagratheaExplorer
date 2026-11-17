@@ -9,8 +9,14 @@ if ($_uriQuery) {
 }
 unset($_uriQuery, $_uriParams);
 
-include("_inc.php");
-include("api.php");
-
-$api = new MagratheaExplorer\MagratheaExplorerApi();
+try {
+	require __DIR__."/_inc.php";
+	require_once __DIR__."/api.php";
+	$api = new MagratheaExplorer\MagratheaExplorerApi();
+} catch(\Throwable $ex) {
+	error_log((string) $ex);
+	http_response_code(500);
+	header("Content-Type: application/json");
+	die(json_encode(["success" => false, "message" => "Internal Server Error"]));
+}
 $api->Run();

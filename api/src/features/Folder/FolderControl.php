@@ -2,11 +2,13 @@
 
 namespace MagratheaExplorer\Folder;
 
-use Magrathea2\DB\Database;
+use Magrathea\DB\Database;
+use Magrathea\MagratheaModelControl;
 use MagratheaExplorer\ErrorCodes;
 use MagratheaExplorer\Key\Key;
 
-class FolderControl extends \MagratheaExplorer\Folder\Base\FolderControlBase {
+class FolderControl extends MagratheaModelControl {
+	protected static $model = Folder::class;
 
 	public static function CreateRoot(Key $key): Folder {
 		$folder = new Folder();
@@ -157,7 +159,7 @@ class FolderControl extends \MagratheaExplorer\Folder\Base\FolderControlBase {
 		if(count($children) > 0) {
 			ErrorCodes::Instance()->ThrowException(4003);
 		}
-		$files = \MagratheaExplorer\File\Base\FileControlBase::GetSimpleWhere("`folder_id` = ".(int)$folder->id);
+		$files = \MagratheaExplorer\File\FileControl::GetSimpleWhere("`folder_id` = ".(int)$folder->id);
 		if(count($files) > 0) {
 			ErrorCodes::Instance()->ThrowException(4003);
 		}

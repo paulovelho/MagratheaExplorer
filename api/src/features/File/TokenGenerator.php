@@ -3,7 +3,6 @@
 namespace MagratheaExplorer\File;
 
 use MagratheaExplorer\ErrorCodes;
-use MagratheaExplorer\File\Base\FileControlBase;
 
 /**
  * Mints the random per-file/per-thumbnail URL tokens (see plan.md §3): each file gets
@@ -37,7 +36,7 @@ class TokenGenerator {
 	public static function GenerateUnique(): string {
 		for($attempt = 0; $attempt < self::MAX_ATTEMPTS; $attempt++) {
 			$token = self::Generate();
-			$inUse = FileControlBase::GetSimpleWhere(
+			$inUse = FileControl::GetSimpleWhere(
 				"`token` = '".$token."' OR `thumbnail_token` = '".$token."'"
 			);
 			if(count($inUse) === 0) return $token;

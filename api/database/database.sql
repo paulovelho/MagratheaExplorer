@@ -1,4 +1,4 @@
--- Magrathea system tables (framework-required, unchanged from platypustechnology/magratheaphp2)
+-- Magrathea system tables (framework-required, from platypustechnology/magratheaphp)
 
 CREATE TABLE `_magrathea_config` (
 	`id` int(11) PRIMARY KEY AUTO_INCREMENT,
@@ -24,7 +24,7 @@ CREATE TABLE `_magrathea_users` (
 	`id` int(11) unsigned NOT NULL AUTO_INCREMENT,
 	`email` varchar(255) UNIQUE,
 	`password` varchar(255) DEFAULT NULL,
-	`last_login` timestamp,
+	`last_login` DATETIME NULL DEFAULT NULL,
 	`role_id` int(11) NULL,
 	`active` tinyint(1) NOT NULL DEFAULT 1,
 	`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ,
@@ -70,6 +70,8 @@ CREATE TABLE `scheduled_deletions` (
 	`requested_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 	`execute_at` datetime NOT NULL,
 	`cancelled_at` TIMESTAMP NULL,
+	`created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	`updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 	FOREIGN KEY (`key_id`) REFERENCES `access_keys`(`id`)
 );
 
@@ -115,7 +117,9 @@ CREATE TABLE `files` (
 DROP TABLE IF EXISTS `tags`;
 CREATE TABLE `tags` (
 	`id` int(11) PRIMARY KEY AUTO_INCREMENT,
-	`name` varchar(100) NOT NULL UNIQUE
+	`name` varchar(100) NOT NULL UNIQUE,
+	`created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	`updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
 DROP TABLE IF EXISTS `file_tags`;

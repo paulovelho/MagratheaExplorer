@@ -2,10 +2,10 @@
 
 namespace MagratheaExplorer\Share;
 
-use Magrathea2\Admin\AdminFeature;
-use Magrathea2\Admin\AdminManager;
-use Magrathea2\Admin\AdminUrls;
-use Magrathea2\Admin\iAdminFeature;
+use Magrathea\Admin\AdminFeature;
+use Magrathea\Admin\AdminManager;
+use Magrathea\Admin\AdminUrls;
+use Magrathea\Admin\iAdminFeature;
 
 /**
  * Operator view of every share link in the system, across all keys, plus a kill switch.
@@ -16,6 +16,8 @@ use Magrathea2\Admin\iAdminFeature;
  * in an operator's browser history for no gain.
  */
 class ShareAdmin extends AdminFeature implements iAdminFeature {
+
+	use \MagratheaExplorer\AdminPostOnly;
 
 	public string $featureName = "Shares";
 	public string $featureId = "AdminShare";
@@ -33,6 +35,7 @@ class ShareAdmin extends AdminFeature implements iAdminFeature {
 
 	/** POST handler: delete one share link. The target file/folder is untouched. */
 	public function Delete() {
+		$this->RefuseIfNotPost();
 		$id = @$_POST["id"];
 		if(!empty($id)) {
 			$share = new Share($id);

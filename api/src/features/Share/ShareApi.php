@@ -2,7 +2,7 @@
 
 namespace MagratheaExplorer\Share;
 
-use Magrathea2\Config;
+use Magrathea\Config;
 use MagratheaExplorer\ErrorCodes;
 use MagratheaExplorer\ExplorerApiControl;
 use MagratheaExplorer\File\FileControl;
@@ -26,7 +26,8 @@ class ShareApi extends ExplorerApiControl {
 		$folder = $folderUuid !== null ? FolderControl::GetForKeyByUuid($key, $folderUuid) : null;
 
 		$share = ShareControl::Create($key, $file, $folder);
-		return $this->ShareView($share);
+		// Insert() leaves created_at null on the object: read it back for the response.
+		return $this->ShareView($share->Reload());
 	}
 
 	/**

@@ -2,7 +2,7 @@
 
 namespace MagratheaExplorer\File;
 
-use Magrathea2\ConfigApp;
+use Magrathea\ConfigApp;
 use MagratheaExplorer\ErrorCodes;
 use MagratheaExplorer\Folder\Folder;
 use MagratheaExplorer\Key\Key;
@@ -115,7 +115,7 @@ class UploadPipeline {
 			}
 
 			$file = new File();
-			// $file->uuid is left unset -- FileBase declares it "uuid", so Insert() mints
+			// $file->uuid is left unset -- File declares it "uuid", so Insert() mints
 			// it (see MagratheaModel.php's CreateInsertQuery()).
 			$file->token = $fileToken;
 			$file->thumbnail_token = $thumbnailToken;
@@ -131,8 +131,7 @@ class UploadPipeline {
 			$file->height = $height;
 			$file->duration = $duration;
 			$file->no_convert = $noConvert ? 1 : 0;
-			// Explicit null when absent -- Insert() writes every declared field regardless
-			// of whether the PHP property was ever set (see FileBase's dbValues comment).
+			// null when there is no thumbnail
 			$file->thumbnail_path = $thumbStoragePath;
 			$file->Insert();
 

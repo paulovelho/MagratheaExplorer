@@ -2,15 +2,15 @@
 
 namespace MagratheaExplorer\Key;
 
+use Magrathea\MagratheaModelControl;
 use MagratheaExplorer\ErrorCodes;
 use MagratheaExplorer\Folder\FolderControl;
-use MagratheaExplorer\Folder\Base\FolderControlBase;
 use MagratheaExplorer\File\FileControl;
-use MagratheaExplorer\File\Base\FileControlBase;
 use MagratheaExplorer\Share\ShareControl;
 use MagratheaExplorer\Storage\StorageFactory;
 
-class KeyControl extends \MagratheaExplorer\Key\Base\KeyControlBase {
+class KeyControl extends MagratheaModelControl {
+	protected static $model = Key::class;
 
 	/**
 	 * Only creation path for a Key -- an authenticated admin action, never a public
@@ -71,7 +71,7 @@ class KeyControl extends \MagratheaExplorer\Key\Base\KeyControlBase {
 		// blocks all three deletes below (and, via the file delete, removeDirectory()).
 		ShareControl::DeleteForKey((int)$key->id);
 
-		$files = FileControlBase::GetWhere(["key_id" => $key->id]);
+		$files = FileControl::GetWhere(["key_id" => $key->id]);
 		foreach($files as $file) {
 			FileControl::DeleteFileAndStorage($file);
 		}
@@ -83,10 +83,7 @@ class KeyControl extends \MagratheaExplorer\Key\Base\KeyControlBase {
 
 		self::DeleteFoldersDeepestFirst((int)$key->id);
 
-		// Array-form GetWhere() unconditionally appends "ORDER BY created_at DESC", which
-		// scheduled_deletions doesn't have (plan.md's finalized schema) -- GetSimpleWhere()
-		// doesn't append it, so it's the safe form for this table.
-		$deletions = \MagratheaExplorer\Key\Base\ScheduledDeletionControlBase::GetSimpleWhere("`key_id` = ".(int)$key->id);
+		$deletions = ScheduledDeletionControl::GetWhere(["key_id" => $key->id]);
 		foreach($deletions as $deletion) {
 			$deletion->Delete();
 		}
@@ -95,7 +92,7 @@ class KeyControl extends \MagratheaExplorer\Key\Base\KeyControlBase {
 	}
 
 	private static function DeleteFoldersDeepestFirst(int $keyId): void {
-		$folders = FolderControlBase::GetWhere(["key_id" => $keyId]);
+		$folders = FolderControl::GetWhere(["key_id" => $keyId]);
 		while(count($folders) > 0) {
 			$parentIds = array_filter(array_map(fn($f) => $f->parent_id, $folders));
 			$progressed = false;

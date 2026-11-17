@@ -2,7 +2,7 @@
 
 namespace MagratheaExplorer\Storage;
 
-use Magrathea2\Singleton;
+use Magrathea\Singleton;
 
 class StorageFactory extends Singleton {
 

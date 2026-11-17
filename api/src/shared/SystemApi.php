@@ -2,10 +2,10 @@
 
 namespace MagratheaExplorer;
 
-use Magrathea2\ConfigApp;
-use Magrathea2\MagratheaApiControl;
-use Magrathea2\MagratheaHelper;
-use Magrathea2\MagratheaPHP;
+use Magrathea\ConfigApp;
+use Magrathea\MagratheaApiControl;
+use Magrathea\MagratheaHelper;
+use Magrathea\MagratheaPHP;
 use MagratheaExplorer\File\UploadPipeline;
 
 class SystemApi extends MagratheaApiControl {

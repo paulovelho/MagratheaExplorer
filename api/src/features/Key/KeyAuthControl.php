@@ -2,7 +2,7 @@
 
 namespace MagratheaExplorer\Key;
 
-use Magrathea2\MagratheaApiAuth;
+use Magrathea\MagratheaApiAuth;
 
 /**
  * Route-level auth gate for `BaseAuthorization()` -- a pure boolean check with no shared

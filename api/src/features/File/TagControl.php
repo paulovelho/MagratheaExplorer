@@ -2,9 +2,11 @@
 
 namespace MagratheaExplorer\File;
 
+use Magrathea\MagratheaModelControl;
 use MagratheaExplorer\ErrorCodes;
 
-class TagControl extends \MagratheaExplorer\File\Base\TagControlBase {
+class TagControl extends MagratheaModelControl {
+	protected static $model = Tag::class;
 
 	public static function GetOrCreate(string $name): Tag {
 		$name = trim($name);

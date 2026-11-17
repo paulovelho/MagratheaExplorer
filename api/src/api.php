@@ -2,9 +2,9 @@
 
 namespace MagratheaExplorer;
 
-use Magrathea2\Config;
-use Magrathea2\MagratheaApi;
-use Magrathea2\MagratheaPHP;
+use Magrathea\Config;
+use Magrathea\MagratheaApi;
+use Magrathea\MagratheaPHP;
 use MagratheaExplorer\Key\KeyApi;
 use MagratheaExplorer\Key\KeyAuthControl;
 use MagratheaExplorer\Folder\FolderApi;
@@ -22,7 +22,6 @@ class MagratheaExplorerApi extends MagratheaApi {
 	}
 
 	public function Initialize() {
-		MagratheaPHP::Instance()->StartDb();
 		$this->AllowAll();
 		$this->AddAcceptHeaders([
 			"Authorization",

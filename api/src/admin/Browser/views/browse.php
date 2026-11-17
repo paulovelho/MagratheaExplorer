@@ -1,9 +1,9 @@
 <?php
 
-use Magrathea2\Admin\AdminCsrf;
-use Magrathea2\Admin\AdminElements;
-use Magrathea2\Admin\AdminUrls;
-use Magrathea2\MagratheaHelper;
+use Magrathea\Admin\AdminCsrf;
+use Magrathea\Admin\AdminElements;
+use Magrathea\Admin\AdminUrls;
+use Magrathea\MagratheaHelper;
 
 $elements = AdminElements::Instance();
 $elements->Header("Browser");
@@ -41,7 +41,7 @@ $orphanUrl = AdminUrls::Instance()->GetFeatureUrl("AdminBrowser", "OrphanCheck")
 					["title" => "Parent ID", "key" => "parent_id"],
 					["title" => "...", "key" => function($f) use ($selectedKeyId, $csrfField) {
 						if(empty($f->parent_id)) return "(root)";
-						return '<form method="post" style="display:inline" action="'.\Magrathea2\Admin\AdminUrls::Instance()->GetFeatureActionUrl("AdminBrowser", "DeleteFolder").'"'
+						return '<form method="post" style="display:inline" action="'.\Magrathea\Admin\AdminUrls::Instance()->GetFeatureActionUrl("AdminBrowser", "DeleteFolder").'"'
 							.' onsubmit="return confirm(\'Delete this folder? It must be empty.\');">'
 							.$csrfField
 							.'<input type="hidden" name="id" value="'.$f->id.'">'
@@ -67,7 +67,7 @@ $orphanUrl = AdminUrls::Instance()->GetFeatureUrl("AdminBrowser", "OrphanCheck")
 					["title" => "Type", "key" => "file_type"],
 					["title" => "Size", "key" => function($f) { return MagratheaHelper::FormatSize((int)$f->size); }],
 					["title" => "...", "key" => function($f) use ($selectedKeyId, $csrfField) {
-						return '<form method="post" style="display:inline" action="'.\Magrathea2\Admin\AdminUrls::Instance()->GetFeatureActionUrl("AdminBrowser", "DeleteFile").'"'
+						return '<form method="post" style="display:inline" action="'.\Magrathea\Admin\AdminUrls::Instance()->GetFeatureActionUrl("AdminBrowser", "DeleteFile").'"'
 							.' onsubmit="return confirm(\'Delete this file from storage and the database?\');">'
 							.$csrfField
 							.'<input type="hidden" name="id" value="'.$f->id.'">'

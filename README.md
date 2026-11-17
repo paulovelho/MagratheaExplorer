@@ -1,7 +1,7 @@
 # Magrathea Explorer
 
 Self-hosted, general-purpose file hosting API — images, audio, video, documents, and
-anything else — built on the in-house **MagratheaPHP2** framework. A sibling to
+anything else — built on the in-house **MagratheaPHP 3** framework. A sibling to
 [MagratheaImages3](../MagratheaImages3), but storage-agnostic (local disk, Cloudflare R2,
 or AWS S3 — pick one per instance) and not limited to images.
 
@@ -133,17 +133,17 @@ docs/openapi.yaml, docs/skills.md          -> API contract + AI-agent guide
 api/                                        -> JSON API project (document root: api/src/)
   composer.json / composer.lock / vendor/  -> see note above
   version, changelog.md                    -> kept in sync on every version bump (see claude.md)
-  configs/                                 -> magrathea.conf, storage.conf, magrathea_objects.conf
+  configs/                                 -> magrathea.conf, storage.conf
   database/database.sql                    -> framework tables + project schema (fresh installs)
   database/migrations/                     -> per-version upgrade scripts for a running instance
-  cache/, logs/, storage/                  -> runtime dirs (gitignored, mounted into the container)
+  backups/, cache/, logs/, storage/        -> runtime dirs (gitignored, mounted into the container)
                                                 storage/ holds one subdirectory per key
                                                 ({key-storage-uuid}/{token}.{ext}), driver-agnostic
   src/                                     -> served at /api/v1 (.htaccess enforces the prefix)
     _inc.php, index.php, admin.php,        -> entry points (admin.php stays unprefixed, e.g. /admin.php)
     api.php, cron.php
     error-manager/                         -> ErrorCodes + error_codes.conf
-    shared/                                -> ExplorerApiControl (bearer-key resolution), SystemApi
+    shared/                                -> ExplorerApiControl (bearer-key resolution), SystemApi, AdminPostOnly
     admin/                                 -> MagratheaExplorerAdmin, Browser (cross-key file/folder browser)
     features/
       Storage/                             -> StorageAdapter interface, Local + S3 implementations

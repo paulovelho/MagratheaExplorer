@@ -2,22 +2,23 @@
 
 namespace MagratheaExplorer;
 
-include("api.php");
+// Absolute: the CLI (vendor/bin/magrathea) loads this class too, from another working directory.
+require_once __DIR__."/../api.php";
 
-use Magrathea2\Admin\Admin;
-use Magrathea2\Admin\AdminMenu;
-use Magrathea2\Admin\Features\ApiExplorer\ApiExplorer;
+use Magrathea\Admin\Admin;
+use Magrathea\Admin\AdminMenu;
+use Magrathea\Admin\Features\ApiExplorer\ApiExplorer;
 use MagratheaExplorer\Key\KeyAdmin;
 use MagratheaExplorer\Key\ScheduledDeletionAdmin;
 use MagratheaExplorer\Share\ShareAdmin;
 
-class MagratheaExplorerAdmin extends Admin implements \Magrathea2\Admin\iAdmin {
+class MagratheaExplorerAdmin extends Admin implements \Magrathea\Admin\iAdmin {
 
 	private $features = [];
 
 	public function Initialize() {
 		try {
-			\Magrathea2\MagratheaPHP::Instance()->Connect();
+			\Magrathea\MagratheaPHP::Instance()->Connect();
 			$appName = SystemApi::AppName();
 		} catch(\Exception $ex) {
 			$appName = SystemApi::DEFAULT_APP_NAME;

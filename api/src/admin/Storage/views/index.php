@@ -1,7 +1,7 @@
 <?php
 
-use Magrathea2\Admin\AdminElements;
-use Magrathea2\MagratheaHelper;
+use Magrathea\Admin\AdminElements;
+use Magrathea\MagratheaHelper;
 
 $elements = AdminElements::Instance();
 $elements->Header("Storage");

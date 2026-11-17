@@ -21,7 +21,8 @@ class FolderApi extends ExplorerApiControl {
 		$data = $this->GetPost();
 		$parent = !empty($data["parent_uuid"]) ? FolderControl::GetForKeyByUuid($key, (string)$data["parent_uuid"]) : null;
 		$folder = FolderControl::Create($key, $parent, $data["name"] ?? "");
-		return $this->FolderView($folder, $parent);
+		// Insert() leaves created_at null on the object: read it back for the response.
+		return $this->FolderView($folder->Reload(), $parent);
 	}
 
 	/** GET /folder/:uuid */

@@ -2,7 +2,7 @@
 
 namespace MagratheaExplorer;
 
-use Magrathea2\MagratheaApiControl;
+use Magrathea\MagratheaApiControl;
 use MagratheaExplorer\Key\Key;
 use MagratheaExplorer\Key\KeyControl;
 

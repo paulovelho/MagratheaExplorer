@@ -205,6 +205,34 @@ mysql -u explorer -p magrathea_explorer < api/database/migrations/1.3.0_shares.s
 
 `database.sql` is for fresh installs only. Never load it into a running instance.
 
+### Upgrading to 1.4.0 (MagratheaPHP 3)
+
+1.4.0 moves to a new framework package, so the update above needs three changes, once:
+
+1. `composer install` fails ("Required package platypustechnology/magratheaphp is not present
+   in the lock file"): `composer.lock` isn't committed, so the instance's own lock still pins
+   `magratheaphp2`. Swap the framework in the lock instead:
+
+   ```sh
+   (cd api && composer update --no-dev --optimize-autoloader platypustechnology/magratheaphp platypustechnology/magratheaphp2)
+   ```
+
+   Plain `composer install` works again for later updates.
+2. If `git pull` refuses because of local changes to `api/src/setup.php` (1.4.0 deletes it),
+   run `git checkout -- api/src/setup.php` and pull again.
+3. Apply `1.4.0_magrathea3.sql` right away: until it runs, uploads with tags and the
+   scheduled-deletion admin fail. It's harmless to 1.3.0, so it can also run before the pull.
+
+Then check the instance. Both must end with no ERROR:
+
+```sh
+cd api && vendor/bin/magrathea check && vendor/bin/magrathea models:verify
+```
+
+`check` warns if the backups folder (`backups_path`, default `api/backups`) is missing;
+`scripts/deploy.sh install`'s "Create runtime directories" step creates it. Every admin logs in again after the
+upgrade.
+
 ## Switching storage type
 
 `driver` is instance-wide and not meant to change on a running instance. Each file's

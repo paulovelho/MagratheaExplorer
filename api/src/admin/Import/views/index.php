@@ -1,8 +1,8 @@
 <?php
 
-use Magrathea2\Admin\AdminCsrf;
-use Magrathea2\Admin\AdminElements;
-use Magrathea2\Admin\AdminUrls;
+use Magrathea\Admin\AdminCsrf;
+use Magrathea\Admin\AdminElements;
+use Magrathea\Admin\AdminUrls;
 
 $elements = AdminElements::Instance();
 $elements->Header("Import");

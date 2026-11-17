@@ -5,7 +5,6 @@
 chdir(__DIR__);
 require "_inc.php";
 
-use Magrathea2\MagratheaPHP;
 use MagratheaExplorer\Key\ScheduledDeletionControl;
 
 $options = getopt("", ["run", "dry-run", "verbose"]);
@@ -17,8 +16,6 @@ if(!$run && !$dryRun) {
 	fwrite(STDERR, "Usage: php cron.php --run [--verbose]  |  php cron.php --dry-run [--verbose]\n");
 	exit(1);
 }
-
-MagratheaPHP::Instance()->StartDb();
 
 if($dryRun) {
 	$due = ScheduledDeletionControl::GetDue();

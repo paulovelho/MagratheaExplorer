@@ -2,10 +2,10 @@
 
 namespace MagratheaExplorer;
 
-use Magrathea2\Admin\AdminFeature;
-use Magrathea2\Admin\AdminManager;
-use Magrathea2\Admin\AdminUrls;
-use Magrathea2\Admin\iAdminFeature;
+use Magrathea\Admin\AdminFeature;
+use Magrathea\Admin\AdminManager;
+use Magrathea\Admin\AdminUrls;
+use Magrathea\Admin\iAdminFeature;
 use MagratheaExplorer\File\File;
 use MagratheaExplorer\File\FileControl;
 use MagratheaExplorer\Folder\Folder;
@@ -18,6 +18,8 @@ use MagratheaExplorer\Key\Key;
  * newest one (by created_at, falling back to id on an exact-timestamp tie).
  */
 class DuplicatesAdmin extends AdminFeature implements iAdminFeature {
+
+	use \MagratheaExplorer\AdminPostOnly;
 
 	public string $featureName = "Duplicates";
 	public string $featureId = "AdminDuplicates";
@@ -76,6 +78,7 @@ class DuplicatesAdmin extends AdminFeature implements iAdminFeature {
 
 	/** POST handler: for each selected group, deletes every file but the newest. */
 	public function DeleteSelected() {
+		$this->RefuseIfNotPost();
 		$tokens = $_POST["groups"] ?? [];
 		$deletedFiles = 0;
 		$deletedGroups = 0;

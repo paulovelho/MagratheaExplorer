@@ -2,7 +2,7 @@
 
 namespace MagratheaExplorer\File;
 
-use Magrathea2\Exceptions\MagratheaException;
+use Magrathea\Exceptions\MagratheaException;
 
 /**
  * Ported near-verbatim from MagratheaImages3's ResampleCalculator.php. Used here only

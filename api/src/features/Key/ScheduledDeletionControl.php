@@ -2,9 +2,11 @@
 
 namespace MagratheaExplorer\Key;
 
+use Magrathea\MagratheaModelControl;
 use MagratheaExplorer\ErrorCodes;
 
-class ScheduledDeletionControl extends \MagratheaExplorer\Key\Base\ScheduledDeletionControlBase {
+class ScheduledDeletionControl extends MagratheaModelControl {
+	protected static $model = ScheduledDeletion::class;
 
 	const DAYS_UNTIL_DELETION = 14;
 
@@ -21,8 +23,8 @@ class ScheduledDeletionControl extends \MagratheaExplorer\Key\Base\ScheduledDele
 		}
 		$deletion = new ScheduledDeletion();
 		$deletion->key_id = $key->id;
-		$deletion->requested_at = \Magrathea2\now();
-		$deletion->execute_at = date("Y-m-d H:i:s", strtotime(\Magrathea2\now()." + ".self::DAYS_UNTIL_DELETION." days"));
+		$deletion->requested_at = \Magrathea\now();
+		$deletion->execute_at = date("Y-m-d H:i:s", strtotime(\Magrathea\now()." + ".self::DAYS_UNTIL_DELETION." days"));
 		$deletion->Insert();
 		return $deletion;
 	}
@@ -32,14 +34,14 @@ class ScheduledDeletionControl extends \MagratheaExplorer\Key\Base\ScheduledDele
 		if($deletion === null) {
 			ErrorCodes::Instance()->ThrowException(4007);
 		}
-		$deletion->cancelled_at = \Magrathea2\now();
+		$deletion->cancelled_at = \Magrathea\now();
 		$deletion->Update();
 		return $deletion;
 	}
 
 	/** @return ScheduledDeletion[] every pending row past its `execute_at` */
 	public static function GetDue(): array {
-		return self::GetSimpleWhere("`execute_at` <= '".\Magrathea2\now()."' AND `cancelled_at` IS NULL");
+		return self::GetSimpleWhere("`execute_at` <= '".\Magrathea\now()."' AND `cancelled_at` IS NULL");
 	}
 
 	/**

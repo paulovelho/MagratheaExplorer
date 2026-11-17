@@ -2,9 +2,9 @@
 
 namespace MagratheaExplorer\Storage;
 
-use Magrathea2\Config;
-use Magrathea2\ConfigFile;
-use Magrathea2\MagratheaPHP;
+use Magrathea\Config;
+use Magrathea\ConfigFile;
+use Magrathea\MagratheaPHP;
 
 /**
  * Reads `storage.conf` (env-sectioned, file-based, deploy-time -- not the DB-backed

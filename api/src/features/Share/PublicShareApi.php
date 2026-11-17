@@ -2,10 +2,10 @@
 
 namespace MagratheaExplorer\Share;
 
-use Magrathea2\MagratheaApiControl;
+use Magrathea\MagratheaApiControl;
 use MagratheaExplorer\ErrorCodes;
 use MagratheaExplorer\File\File;
-use MagratheaExplorer\File\Base\FileControlBase;
+use MagratheaExplorer\File\FileControl;
 use MagratheaExplorer\Folder\Folder;
 use MagratheaExplorer\Folder\FolderControl;
 use MagratheaExplorer\Storage\StorageFactory;
@@ -90,7 +90,7 @@ class PublicShareApi extends MagratheaApiControl {
 	/** One folder's listing, always relative to the share -- never the owner's whole tree. */
 	private function FolderPayload(Share $share, Folder $folder, array $path): array {
 		$folders = FolderControl::GetSimpleWhere("`parent_id` = ".(int)$folder->id);
-		$files = FileControlBase::GetSimpleWhere("`folder_id` = ".(int)$folder->id);
+		$files = FileControl::GetSimpleWhere("`folder_id` = ".(int)$folder->id);
 		usort($folders, fn($a, $b) => strcasecmp($a->name, $b->name));
 		usort($files, fn($a, $b) => strcasecmp($a->name, $b->name));
 

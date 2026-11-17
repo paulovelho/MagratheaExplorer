@@ -2,11 +2,11 @@
 
 namespace MagratheaExplorer;
 
-use Magrathea2\Admin\AdminFeature;
-use Magrathea2\Admin\AdminManager;
-use Magrathea2\Admin\AdminUrls;
-use Magrathea2\Admin\iAdminFeature;
-use Magrathea2\Exceptions\MagratheaModelException;
+use Magrathea\Admin\AdminFeature;
+use Magrathea\Admin\AdminManager;
+use Magrathea\Admin\AdminUrls;
+use Magrathea\Admin\iAdminFeature;
+use Magrathea\Exceptions\MagratheaModelException;
 use MagratheaExplorer\File\ImportPipeline;
 use MagratheaExplorer\Folder\FolderControl;
 use MagratheaExplorer\Key\Key;
@@ -21,6 +21,8 @@ use MagratheaExplorer\Key\KeyControl;
  * per-request client upload.
  */
 class ImportAdmin extends AdminFeature implements iAdminFeature {
+
+	use \MagratheaExplorer\AdminPostOnly;
 
 	public string $featureName = "Import";
 	public string $featureId = "AdminImport";
@@ -41,6 +43,7 @@ class ImportAdmin extends AdminFeature implements iAdminFeature {
 
 	/** POST handler: validates input, runs the import synchronously, renders a result summary. */
 	public function RunImport() {
+		$this->RefuseIfNotPost();
 		$keyId = (int)($_POST["key_id"] ?? 0);
 		try {
 			$key = !empty($keyId) ? new Key($keyId) : null;

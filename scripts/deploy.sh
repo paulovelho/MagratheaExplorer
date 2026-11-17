@@ -248,10 +248,12 @@ check_configs() {
 
 setup_dirs() {
 	info "Creating runtime directories"
-	local logs cache
+	local logs cache backups
 	logs="$(conf magrathea.conf logs_path)"; logs="${logs:-$API_DIR/logs}"
 	cache="$(conf magrathea.conf cache_path)"; cache="${cache:-$API_DIR/cache}"
-	local dirs=("$logs" "$cache")
+	# Dumps from the admin's Database > Dumps page and `vendor/bin/magrathea db:dump`.
+	backups="$(conf magrathea.conf backups_path)"; backups="${backups:-$API_DIR/backups}"
+	local dirs=("$logs" "$cache" "$backups")
 
 	if [ "$(conf storage.conf driver)" = "local" ]; then
 		local storage; storage="$(conf storage.conf local_path)"

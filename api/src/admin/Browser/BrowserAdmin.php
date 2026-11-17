@@ -2,10 +2,10 @@
 
 namespace MagratheaExplorer;
 
-use Magrathea2\Admin\AdminFeature;
-use Magrathea2\Admin\AdminManager;
-use Magrathea2\Admin\AdminUrls;
-use Magrathea2\Admin\iAdminFeature;
+use Magrathea\Admin\AdminFeature;
+use Magrathea\Admin\AdminManager;
+use Magrathea\Admin\AdminUrls;
+use Magrathea\Admin\iAdminFeature;
 use MagratheaExplorer\File\FileControl;
 use MagratheaExplorer\Folder\FolderControl;
 use MagratheaExplorer\Key\Key;
@@ -19,6 +19,8 @@ use MagratheaExplorer\Storage\StorageFactory;
  * DB row points at a storage object that no longer exists in the active backend.
  */
 class BrowserAdmin extends AdminFeature implements iAdminFeature {
+
+	use \MagratheaExplorer\AdminPostOnly;
 
 	public string $featureName = "Browser";
 	public string $featureId = "AdminBrowser";
@@ -38,6 +40,7 @@ class BrowserAdmin extends AdminFeature implements iAdminFeature {
 
 	/** POST handler: delete a file from an operator context (no owning-key size credit needed to survive review, still applied) */
 	public function DeleteFile() {
+		$this->RefuseIfNotPost();
 		$id = @$_POST["id"];
 		$keyId = @$_POST["key_id"];
 		if(!empty($id) && !empty($keyId)) {
@@ -52,6 +55,7 @@ class BrowserAdmin extends AdminFeature implements iAdminFeature {
 
 	/** POST handler: delete an empty, non-root folder */
 	public function DeleteFolder() {
+		$this->RefuseIfNotPost();
 		$id = @$_POST["id"];
 		$keyId = @$_POST["key_id"];
 		if(!empty($id) && !empty($keyId)) {
@@ -81,6 +85,7 @@ class BrowserAdmin extends AdminFeature implements iAdminFeature {
 
 	/** POST handler: purge the DB row for a file whose storage object is confirmed missing */
 	public function PurgeOrphan() {
+		$this->RefuseIfNotPost();
 		$id = @$_POST["id"];
 		if(!empty($id)) {
 			$file = new \MagratheaExplorer\File\File($id);

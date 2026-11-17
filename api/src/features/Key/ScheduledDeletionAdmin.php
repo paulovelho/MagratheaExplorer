@@ -2,12 +2,14 @@
 
 namespace MagratheaExplorer\Key;
 
-use Magrathea2\Admin\AdminFeature;
-use Magrathea2\Admin\AdminManager;
-use Magrathea2\Admin\AdminUrls;
-use Magrathea2\Admin\iAdminFeature;
+use Magrathea\Admin\AdminFeature;
+use Magrathea\Admin\AdminManager;
+use Magrathea\Admin\AdminUrls;
+use Magrathea\Admin\iAdminFeature;
 
 class ScheduledDeletionAdmin extends AdminFeature implements iAdminFeature {
+
+	use \MagratheaExplorer\AdminPostOnly;
 
 	public string $featureName = "Scheduled Deletions";
 	public string $featureId = "AdminScheduledDeletion";
@@ -23,6 +25,7 @@ class ScheduledDeletionAdmin extends AdminFeature implements iAdminFeature {
 
 	/** POST handler: cancel a pending deletion (the caller's own /key/cancel-deletion, done by an operator) */
 	public function Cancel() {
+		$this->RefuseIfNotPost();
 		$id = @$_POST["id"];
 		if(!empty($id)) {
 			$deletion = new ScheduledDeletion($id);
@@ -36,6 +39,7 @@ class ScheduledDeletionAdmin extends AdminFeature implements iAdminFeature {
 
 	/** POST handler: run this key's deletion right now, bypassing the remaining wait */
 	public function ForceExecute() {
+		$this->RefuseIfNotPost();
 		$id = @$_POST["id"];
 		if(!empty($id)) {
 			$deletion = new ScheduledDeletion($id);

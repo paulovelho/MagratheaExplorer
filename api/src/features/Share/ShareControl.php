@@ -2,23 +2,24 @@
 
 namespace MagratheaExplorer\Share;
 
-use Magrathea2\DB\Database;
+use Magrathea\DB\Database;
+use Magrathea\MagratheaModelControl;
 use MagratheaExplorer\ErrorCodes;
 use MagratheaExplorer\File\File;
 use MagratheaExplorer\Folder\Folder;
 use MagratheaExplorer\Key\Key;
 
-class ShareControl extends \MagratheaExplorer\Share\Base\ShareControlBase {
+class ShareControl extends MagratheaModelControl {
+	protected static $model = Share::class;
 
 	/**
 	 * Mints a share for exactly one target. Both-or-neither is a 4001 -- the DB's
 	 * chk_share_target constraint says the same thing, but this is the error the caller
 	 * gets to read.
 	 *
-	 * Every column is set explicitly: the framework writes each declared dbValues field
-	 * on Insert() and never falls back to the column's SQL DEFAULT (see Key::Normalize()).
-	 * `uuid` is the exception -- it's declared "uuid" in ShareBase, so Insert() mints it
-	 * and writes it back onto the object.
+	 * Every column is set explicitly rather than left to its SQL DEFAULT (see
+	 * Key::Normalize()). `uuid` is the exception -- it's declared "uuid" in Share, so
+	 * Insert() mints it and writes it back onto the object.
 	 */
 	public static function Create(Key $key, ?File $file, ?Folder $folder): Share {
 		if(($file === null) === ($folder === null)) {
@@ -78,7 +79,7 @@ class ShareControl extends \MagratheaExplorer\Share\Base\ShareControlBase {
 	 * after a public response is successfully assembled, never on a 404.
 	 */
 	public static function RegisterView(Share $share): void {
-		$now = \Magrathea2\now();
+		$now = \Magrathea\now();
 		Database::Instance()->PrepareAndExecute(
 			"UPDATE `shares` SET `views` = `views` + 1, `last_viewed_at` = ? WHERE `id` = ?",
 			["string", "int"],

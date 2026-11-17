@@ -2,7 +2,7 @@
 
 namespace MagratheaExplorer\File;
 
-use Magrathea2\Logger;
+use Magrathea\Logger;
 
 /**
  * Ported near-verbatim from MagratheaImages3's MetadataStripper.php (fully portable --

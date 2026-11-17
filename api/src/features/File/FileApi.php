@@ -35,7 +35,9 @@ class FileApi extends ExplorerApiControl {
 		}
 
 		$file = UploadPipeline::Handle($key, $folder, $_FILES["file"], $noConvert, $tagNames);
-		return $this->FileView($file, $folder);
+		// Insert() leaves created_at null on the object (the database fills it): read it back
+		// for the response. Here, not in UploadPipeline, which bulk import calls per file.
+		return $this->FileView($file->Reload(), $folder);
 	}
 
 	/** GET /files -- filters: ?folder_uuid= (defaults to the key's root folder), ?file_type=, ?tag= */

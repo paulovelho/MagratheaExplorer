@@ -4,8 +4,6 @@
 // so the name is right from the first paint and changes in the admin show up on
 // the next page load -- no rebuild needed. dist/.htaccess (from app/public/.htaccess)
 // and api/site.caddy.sample route every /app request that isn't a real asset here.
-include("_inc.php");
-
 use MagratheaExplorer\SystemApi;
 
 // Prod (Apache or Caddy): api/src/app is a symlink to dist/. Docker: dist/ is mounted at
@@ -28,11 +26,12 @@ if(!$indexFile) {
 }
 
 // Never let a config/database hiccup take the whole app down -- fall back to the default name.
+// The bootstrap throws on a broken config (it no longer prints and carries on), so it's in here too.
 try {
-	\Magrathea2\MagratheaPHP::Instance()->Connect();
+	require __DIR__."/_inc.php";
 	$appName = SystemApi::AppName();
 } catch(\Throwable $ex) {
-	$appName = SystemApi::DEFAULT_APP_NAME;
+	$appName = "Magrathea Explorer"; // SystemApi::DEFAULT_APP_NAME, which may not be loadable here
 }
 $safeName = htmlspecialchars($appName, ENT_QUOTES);
 

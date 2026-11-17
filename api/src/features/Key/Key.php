@@ -2,18 +2,55 @@
 
 namespace MagratheaExplorer\Key;
 
-use Magrathea2\DB\Database;
+use Magrathea\DB\Database;
+use Magrathea\MagratheaModel;
 use MagratheaExplorer\ErrorCodes;
 
-class Key extends \MagratheaExplorer\Key\Base\KeyBase {
+class Key extends MagratheaModel {
+
+	protected $dbTable = "access_keys";
+	protected $dbPk = "id";
+	protected $dbValues = [
+		"id" => "int",
+		// the bearer credential: never in a URL, never echoed back by the API
+		"uuid" => "uuid",
+		// "uuid" too, so Insert() mints it. Separate from `uuid` above: this one is the
+		// public, non-secret storage directory name and goes into URLs freely.
+		"storage_uuid" => "uuid",
+		"name" => "string",
+		"uses" => "int",
+		"usage_limit" => "int",
+		"total_size" => "int",
+		"usage_limit_mb" => "int",
+		"expiration" => "datetime",
+		"active" => "boolean",
+	];
+	protected $relations = [
+		"properties" => ["Folders" => null, "Files" => null, "ScheduledDeletions" => null],
+		"methods" => ["Folders" => "GetFolders", "Files" => "GetFiles", "ScheduledDeletions" => "GetScheduledDeletions"],
+		"lazyload" => ["Folders" => true, "Files" => true, "ScheduledDeletions" => true],
+	];
+
+	public $id, $uuid, $storage_uuid, $name, $uses, $usage_limit, $total_size, $usage_limit_mb, $expiration, $active;
+
+	public function GetFolders(): array {
+		return $this->relations["properties"]["Folders"] ??= \MagratheaExplorer\Folder\FolderControl::GetWhere(["key_id" => $this->id]);
+	}
+
+	public function GetFiles(): array {
+		return $this->relations["properties"]["Files"] ??= \MagratheaExplorer\File\FileControl::GetWhere(["key_id" => $this->id]);
+	}
+
+	public function GetScheduledDeletions(): array {
+		return $this->relations["properties"]["ScheduledDeletions"] ??= ScheduledDeletionControl::GetWhere(["key_id" => $this->id]);
+	}
 
 	/**
-	 * The framework writes every declared dbValues field on Insert() regardless of
-	 * whether the PHP property was ever set -- it does NOT fall back to the column's
-	 * SQL DEFAULT for an unset property. So every field with a non-null-ish default
-	 * (including `active`) must be defaulted here explicitly, not just left unset.
-	 * `uuid`/`storage_uuid` need no line here -- both are declared "uuid" in
-	 * KeyBase::MagratheaStart(), so Insert() mints them itself when left unset.
+	 * Sets every field a new key needs, so the row doesn't depend on the columns' SQL
+	 * defaults. (Insert() leaves a null field out of the INSERT, so its column DEFAULT
+	 * applies: `usage_limit`/`usage_limit_mb`/`expiration` are nullable columns.)
+	 * `uuid`/`storage_uuid` need no line here -- both are declared "uuid", so Insert()
+	 * mints them itself when left unset.
 	 */
 	public function Normalize(): Key {
 		if(!$this->uses) $this->uses = 0;
@@ -41,9 +78,8 @@ class Key extends \MagratheaExplorer\Key\Base\KeyBase {
 	 * one code path.
 	 */
 	public function HasPendingScheduledDeletion(): bool {
-		$pk = $this->dbPk;
-		$pending = \MagratheaExplorer\Key\Base\ScheduledDeletionControlBase::GetRowWhere([
-			"key_id" => $this->$pk,
+		$pending = ScheduledDeletionControl::GetRowWhere([
+			"key_id" => $this->id,
 			"cancelled_at" => null,
 		]);
 		return !empty($pending);
@@ -58,7 +94,7 @@ class Key extends \MagratheaExplorer\Key\Base\KeyBase {
 		if(!$this->active) {
 			ErrorCodes::Instance()->ThrowException(4013);
 		}
-		if($this->expiration != null && $this->expiration < \Magrathea2\now()) {
+		if($this->expiration != null && $this->expiration < \Magrathea\now()) {
 			ErrorCodes::Instance()->ThrowException(4012);
 		}
 	}

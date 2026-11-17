@@ -2,12 +2,14 @@
 
 namespace MagratheaExplorer\File;
 
+use Magrathea\MagratheaModelControl;
 use MagratheaExplorer\ErrorCodes;
 use MagratheaExplorer\Key\Key;
 use MagratheaExplorer\Share\ShareControl;
 use MagratheaExplorer\Storage\StorageFactory;
 
-class FileControl extends \MagratheaExplorer\File\Base\FileControlBase {
+class FileControl extends MagratheaModelControl {
+	protected static $model = File::class;
 
 	/**
 	 * Scoped lookup: a file belonging to another key 404s (not 403), same reasoning as

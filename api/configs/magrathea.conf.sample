@@ -1,6 +1,5 @@
 [general]
 	use_environment = "dev"
-	time_zone = "America/Sao_Paulo"
 
 [dev]
 	db_host = "mag_sql"

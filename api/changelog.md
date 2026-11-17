@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.4.0
+2026-11-17
+- **improvement:** Runs on MagratheaPHP 3 (`platypustechnology/magratheaphp`, namespace
+  `Magrathea`), up from MagratheaPHP2 2.3.4. API routes and response shapes don't change,
+  apart from the items below; int and boolean fields keep their 2.x JSON types.
+- **fix:** Removed `api/src/setup.php`, the 2.x setup wizard. On 2.3 it had no lock, so any
+  instance served an open wizard (with its SQL and user-reset actions) at `/setup.php`. First-run
+  admin setup is still `magrathea.php`.
+- **fix:** Admin actions that change data (key save and force-delete, scheduled-deletion cancel
+  and force-execute, share/file/folder delete, orphan purge, duplicate purge, import) refuse
+  anything but POST, so a GET link can't trigger them past the admin's CSRF check.
+- **fix:** Timestamps now read back in the configured `timezone`: MySQL's session timezone
+  follows PHP's. On a server whose MySQL runs in another zone, every `created_at` moves to local
+  time (3 hours earlier for UTC vs `America/Sao_Paulo`), matching what create responses already
+  returned. Rows of `scheduled_deletions.requested_at`/`cancelled_at` written before 1.4.0 read
+  shifted by that offset. `db_sync_timezone = false` in the environment's section of
+  `magrathea.conf` keeps the old behavior.
+- **breaking:** An unknown API route answers HTTP 404 (it was HTTP 200 with `success: false`).
+  The explorer app already handles both.
+- **breaking:** Every admin has to log in again after the upgrade, and admin users with
+  `active = 0` can no longer log in.
+- **db:** `tags` and `scheduled_deletions` get `created_at`/`updated_at`, which MagratheaPHP 3
+  needs on every model table: without them, every tag lookup (so every upload with tags) and
+  every scheduled-deletion query fails. Additive only -- no backfill. Upgrading an instance on
+  1.3.0 needs `api/database/migrations/1.4.0_magrathea3.sql`; a fresh install gets it from
+  `database.sql`.
+- **upgrade:** A plain `composer install` fails on an existing instance: its `composer.lock`
+  (untracked) still pins `magratheaphp2`. Run, once,
+  `(cd api && composer update --no-dev --optimize-autoloader platypustechnology/magratheaphp platypustechnology/magratheaphp2)`
+  -- see "Updating an instance" in `docs/deploy.md`.
+
 ## 1.3.0
 2026-09-22
 - **new:** Share links. Any file or folder can be given a public link (`/app/s/{share-uuid}`)

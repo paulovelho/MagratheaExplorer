@@ -2,8 +2,8 @@
 
 namespace MagratheaExplorer;
 
-use Magrathea2\Admin\AdminFeature;
-use Magrathea2\Admin\iAdminFeature;
+use Magrathea\Admin\AdminFeature;
+use Magrathea\Admin\iAdminFeature;
 use MagratheaExplorer\File\FileControl;
 use MagratheaExplorer\Key\KeyControl;
 use MagratheaExplorer\Storage\StorageConfig;
