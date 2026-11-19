@@ -16,6 +16,9 @@ class Folder extends MagratheaModel {
 		"key_id" => "int",
 		"parent_id" => "int",
 		"name" => "string",
+		// set by a recursive delete (FolderDeletion) on the whole subtree: from then on the folder
+		// is gone for the API, and the sweep deletes it. null = a live folder
+		"deleting_at" => "datetime",
 	];
 	protected $relations = [
 		"properties" => ["Key" => null, "Files" => null, "Parent" => null, "Children" => null],
@@ -23,7 +26,7 @@ class Folder extends MagratheaModel {
 		"lazyload" => ["Key" => true, "Files" => true, "Parent" => true, "Children" => true],
 	];
 
-	public $id, $uuid, $key_id, $parent_id, $name;
+	public $id, $uuid, $key_id, $parent_id, $name, $deleting_at;
 
 	public function GetKey(): \MagratheaExplorer\Key\Key {
 		return $this->relations["properties"]["Key"] ??= new \MagratheaExplorer\Key\Key($this->key_id);
@@ -45,6 +48,10 @@ class Folder extends MagratheaModel {
 
 	public function IsRoot(): bool {
 		return empty($this->parent_id);
+	}
+
+	public function IsBeingDeleted(): bool {
+		return $this->deleting_at !== null;
 	}
 
 }

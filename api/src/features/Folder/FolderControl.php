@@ -37,7 +37,8 @@ class FolderControl extends MagratheaModelControl {
 	 * (see plan.md §0). Public API controllers use GetForKeyByUuid() instead.
 	 */
 	public static function GetForKey(Key $key, int $id): Folder {
-		$folder = self::GetRowWhere(["id" => $id, "key_id" => $key->id]);
+		// a folder pending a recursive delete is gone (FolderDeletion)
+		$folder = self::GetRowWhere(["id" => $id, "key_id" => $key->id, "deleting_at" => null]);
 		if($folder === null) {
 			ErrorCodes::Instance()->ThrowException(4042);
 		}
@@ -46,7 +47,7 @@ class FolderControl extends MagratheaModelControl {
 
 	/** Uuid counterpart of GetForKey() -- the public API's lookup path. Same 404 reasoning. */
 	public static function GetForKeyByUuid(Key $key, string $uuid): Folder {
-		$folder = self::GetRowWhere(["uuid" => $uuid, "key_id" => $key->id]);
+		$folder = self::GetRowWhere(["uuid" => $uuid, "key_id" => $key->id, "deleting_at" => null]);
 		if($folder === null) {
 			ErrorCodes::Instance()->ThrowException(4042);
 		}
@@ -58,6 +59,22 @@ class FolderControl extends MagratheaModelControl {
 		if($id === null) return null;
 		$folder = self::GetRowWhere(["id" => $id]);
 		return $folder !== null ? $folder->uuid : null;
+	}
+
+	/**
+	 * UuidFor() for many folder ids in one query.
+	 * @param int[] $ids
+	 * @return array<int, string> folder id => uuid; unknown ids are absent
+	 */
+	public static function UuidsFor(array $ids): array {
+		$ids = array_values(array_unique(array_map("intval", $ids)));
+		if($ids === []) return [];
+		$rows = Database::Instance()->QueryAll("SELECT `id`, `uuid` FROM `folders` WHERE `id` IN (".implode(",", $ids).")");
+		$uuids = [];
+		foreach($rows as $row) {
+			$uuids[(int)$row["id"]] = (string)$row["uuid"];
+		}
+		return $uuids;
 	}
 
 	public static function Create(Key $key, ?Folder $parent, string $name): Folder {

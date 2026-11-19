@@ -19,4 +19,9 @@ class StorageFactory extends Singleton {
 		return $this->adapter;
 	}
 
+	/** Tests only: the adapter Get() returns; null = built from storage.conf again. */
+	public function SetAdapterForTests(?StorageAdapter $adapter): void {
+		$this->adapter = $adapter;
+	}
+
 }

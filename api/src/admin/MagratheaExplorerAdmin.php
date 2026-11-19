@@ -10,6 +10,8 @@ use Magrathea\Admin\AdminMenu;
 use Magrathea\Admin\Features\ApiExplorer\ApiExplorer;
 use MagratheaExplorer\Key\KeyAdmin;
 use MagratheaExplorer\Key\ScheduledDeletionAdmin;
+use MagratheaExplorer\Processing\ProcessingAdmin;
+use MagratheaExplorer\Provisioning\ProvisioningAdmin;
 use MagratheaExplorer\Share\ShareAdmin;
 
 class MagratheaExplorerAdmin extends Admin implements \Magrathea\Admin\iAdmin {
@@ -45,11 +47,13 @@ class MagratheaExplorerAdmin extends Admin implements \Magrathea\Admin\iAdmin {
 		parent::SetFeatures();
 		$this->LoadApi();
 		$this->features["key"] = new KeyAdmin();
+		$this->features["provisioning"] = new ProvisioningAdmin();
 		$this->features["scheduled-deletion"] = new ScheduledDeletionAdmin();
 		$this->features["browser"] = new BrowserAdmin();
 		$this->features["storage"] = new StorageAdmin();
 		$this->features["import"] = new ImportAdmin();
 		$this->features["duplicates"] = new DuplicatesAdmin();
+		$this->features["processing"] = new ProcessingAdmin();
 		$this->features["share"] = new ShareAdmin();
 		$this->AddFeaturesArray($this->features);
 	}
@@ -60,8 +64,10 @@ class MagratheaExplorerAdmin extends Admin implements \Magrathea\Admin\iAdmin {
 			->Add($this->features["browser"]->GetMenuItem())
 			->Add($this->features["import"]->GetMenuItem())
 			->Add($this->features["duplicates"]->GetMenuItem())
+			->Add($this->features["processing"]->GetMenuItem())
 			->Add($this->features["share"]->GetMenuItem())
 			->Add($this->features["key"]->GetMenuItem())
+			->Add($this->features["provisioning"]->GetMenuItem())
 			->Add($this->features["scheduled-deletion"]->GetMenuItem())
 			->Add($this->features["storage"]->GetMenuItem())
 

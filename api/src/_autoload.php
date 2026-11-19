@@ -16,4 +16,4 @@ Magrathea\MagratheaPHP::Instance()
 		"shared",
 		"error-manager",
 	)
-	->AddFeature("Key", "Folder", "File", "Storage", "Share");
+	->AddFeature("Key", "Folder", "File", "Storage", "Share", "Processing", "Provisioning");

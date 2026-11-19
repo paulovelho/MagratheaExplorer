@@ -4,11 +4,11 @@ namespace MagratheaExplorer\Share;
 
 use Magrathea\MagratheaApiControl;
 use MagratheaExplorer\ErrorCodes;
-use MagratheaExplorer\File\File;
 use MagratheaExplorer\File\FileControl;
+use MagratheaExplorer\File\FileRenditionControl;
+use MagratheaExplorer\File\FileResponse;
 use MagratheaExplorer\Folder\Folder;
 use MagratheaExplorer\Folder\FolderControl;
-use MagratheaExplorer\Storage\StorageFactory;
 
 /**
  * The unauthenticated half of sharing: every route here is self::OPEN, and the only
@@ -34,7 +34,7 @@ class PublicShareApi extends MagratheaApiControl {
 			$payload = [
 				"type" => "file",
 				"name" => $file->name,
-				"file" => $this->SharedFileView($file),
+				"file" => FileResponse::Shared($file),
 			];
 		} else {
 			$root = $this->ShareRoot($share);
@@ -63,6 +63,7 @@ class PublicShareApi extends MagratheaApiControl {
 		$folder = FolderControl::GetRowWhere([
 			"uuid" => (string)($params["folder_uuid"] ?? ""),
 			"key_id" => (int)$share->key_id,
+			"deleting_at" => null,
 		]);
 		if($folder === null) {
 			ErrorCodes::Instance()->ThrowException(4042);
@@ -83,16 +84,19 @@ class PublicShareApi extends MagratheaApiControl {
 
 	private function ShareRoot(Share $share): Folder {
 		$root = $share->GetFolder();
-		if($root === null) ErrorCodes::Instance()->ThrowException(4045);
+		// a folder pending a recursive delete is gone: its share with it
+		if($root === null || $root->IsBeingDeleted()) ErrorCodes::Instance()->ThrowException(4045);
 		return $root;
 	}
 
 	/** One folder's listing, always relative to the share -- never the owner's whole tree. */
 	private function FolderPayload(Share $share, Folder $folder, array $path): array {
-		$folders = FolderControl::GetSimpleWhere("`parent_id` = ".(int)$folder->id);
+		$folders = FolderControl::GetSimpleWhere("`parent_id` = ".(int)$folder->id." AND `deleting_at` IS NULL");
 		$files = FileControl::GetSimpleWhere("`folder_id` = ".(int)$folder->id);
 		usort($folders, fn($a, $b) => strcasecmp($a->name, $b->name));
 		usort($files, fn($a, $b) => strcasecmp($a->name, $b->name));
+		// every listed file's renditions in one query
+		$renditions = FileRenditionControl::GetForFiles(array_map(fn($f) => (int)$f->id, $files));
 
 		return [
 			"type" => "folder",
@@ -102,7 +106,7 @@ class PublicShareApi extends MagratheaApiControl {
 				"name" => $this->DisplayName($share, $crumb),
 			], $path),
 			"folders" => array_map(fn($f) => ["uuid" => $f->uuid, "name" => $f->name], $folders),
-			"files" => array_map(fn($f) => $this->SharedFileView($f), $files),
+			"files" => array_map(fn($f) => FileResponse::Shared($f, $renditions[(int)$f->id] ?? []), $files),
 		];
 	}
 
@@ -113,34 +117,6 @@ class PublicShareApi extends MagratheaApiControl {
 	 */
 	private function DisplayName(Share $share, Folder $folder): string {
 		return $folder->IsRoot() ? $share->TargetName() : $folder->name;
-	}
-
-	/**
-	 * A strict subset of FileApi::FileView() -- same field names and types, so the app can
-	 * render a shared listing with the shape it already knows. Dropped on purpose:
-	 * `folder_uuid` (the visitor navigates by share, not by folder), `no_convert` and
-	 * `tags` (owner-side metadata).
-	 *
-	 * `url` is the same direct-from-storage link the owner gets. Deleting the share stops
-	 * this page; a storage URL someone already copied keeps working, and only deleting the
-	 * file stops that.
-	 */
-	private function SharedFileView(File $file): array {
-		$storage = StorageFactory::Instance()->Get();
-		return [
-			"uuid" => $file->uuid,
-			"name" => $file->name,
-			"extension" => $file->extension,
-			"mime_type" => $file->mime_type,
-			"file_type" => $file->file_type,
-			"size" => (int)$file->size,
-			"width" => $file->width !== null ? (int)$file->width : null,
-			"height" => $file->height !== null ? (int)$file->height : null,
-			"duration" => $file->duration !== null ? (int)$file->duration : null,
-			"url" => $storage->url($file->storage_path, $file->name, $file->DispositionType()),
-			"thumbnail_url" => $file->HasThumbnail() ? $storage->url($file->thumbnail_path) : null,
-			"created_at" => $file->created_at,
-		];
 	}
 
 }

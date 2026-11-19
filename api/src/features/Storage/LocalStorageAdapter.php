@@ -41,6 +41,40 @@ class LocalStorageAdapter implements StorageAdapter {
 		}
 	}
 
+	/** copy() streams through a fixed-size buffer (or the kernel, with copy_file_range()). */
+	public function fetch(string $path, string $localTmpFile): void {
+		$source = $this->fullPath($path);
+		try {
+			if(!is_file($source)) {
+				throw new StorageException("object not found in local storage: ".$path);
+			}
+			if(!@copy($source, $localTmpFile)) {
+				throw new StorageException("could not copy ".$path." from local storage to ".$localTmpFile);
+			}
+		} catch(StorageException $ex) {
+			// a tempnam() placeholder or a partial copy: either way, not the object
+			if(is_file($localTmpFile)) @unlink($localTmpFile);
+			throw $ex;
+		}
+	}
+
+	/** copy(), streamed like fetch(). A partial copy is removed: nothing half-written is left at $to. */
+	public function copy(string $from, string $to): void {
+		$source = $this->fullPath($from);
+		$dest = $this->fullPath($to);
+		if(!is_file($source)) {
+			throw new StorageException("object not found in local storage: ".$from);
+		}
+		$dir = dirname($dest);
+		if(!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
+			throw new StorageException("could not create storage directory: ".$dir);
+		}
+		if(!@copy($source, $dest)) {
+			if(is_file($dest)) @unlink($dest);
+			throw new StorageException("could not copy ".$from." to ".$to." in local storage");
+		}
+	}
+
 	public function delete(string $path): void {
 		$dest = $this->fullPath($path);
 		if(file_exists($dest) && !@unlink($dest)) {

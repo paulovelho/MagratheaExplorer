@@ -9,6 +9,10 @@ $elements->Header("Import");
 $csrfField = '<input type="hidden" name="magrathea_csrf_token" value="'.AdminCsrf::Instance()->GetToken().'">';
 
 $baseUrl = AdminUrls::Instance()->GetFeatureUrl("AdminImport");
+$selectedKey = null;
+foreach($keys as $k) {
+	if($selectedKeyId == $k->id) $selectedKey = $k;
+}
 
 ?>
 <div class="container">
@@ -58,8 +62,12 @@ $baseUrl = AdminUrls::Instance()->GetFeatureUrl("AdminImport");
 							must already exist and be readable by the web server process. The source folder itself
 							becomes a new folder (or is reused if one with that name already exists) inside the
 							destination above, with its whole subtree mirrored underneath it. Every file goes through
-							the same processing as a normal upload (MIME sniffing, image re-encode/thumbnail/metadata
-							strip). Symlinks are skipped. This key's usage limits are not enforced for imports.
+							the same processing as a normal upload without flags (MIME sniffing, metadata), except
+							that renditions are always queued for <code>cron.php --process</code>, never made during the
+							import. Images
+							follow this key's verbatim default, so they're
+							<strong><?=($selectedKey !== null && $selectedKey->VerbatimByDefault() ? "stored verbatim" : "stripped and converted (images above the conversion limits are skipped)")?></strong>.
+							Symlinks are skipped. This key's usage limits are not enforced for imports.
 						</p>
 						<div class="row mt-2">
 							<div class="col-2"><? $elements->Button("Import", "", "btn-success w-100", "", true); ?></div>

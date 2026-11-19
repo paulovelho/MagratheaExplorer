@@ -56,6 +56,67 @@ class S3StorageAdapter implements StorageAdapter {
 		}
 	}
 
+	/**
+	 * Writes each chunk as it arrives. async-aws also mirrors the body into its own php://temp
+	 * buffer (in memory up to 2 MB, then a file in sys_get_temp_dir()), so a fetch needs about
+	 * twice the object's size in temp disk until it returns; PHP memory stays flat either way.
+	 * getContentAsResource() would cost the same disk and write nothing until the whole body
+	 * had arrived.
+	 */
+	public function fetch(string $path, string $localTmpFile): void {
+		$out = @fopen($localTmpFile, "wb");
+		if($out === false) {
+			throw new StorageException("could not open ".$localTmpFile." for writing");
+		}
+		$complete = false;
+		try {
+			$result = $this->client->getObject([
+				"Bucket" => $this->bucket,
+				"Key" => $path,
+			]);
+			$written = 0;
+			foreach($result->getBody()->getChunks() as $chunk) {
+				$length = strlen($chunk);
+				if(fwrite($out, $chunk) !== $length) {
+					throw new StorageException("short write to ".$localTmpFile." (disk full?)");
+				}
+				$written += $length;
+			}
+			$expected = $result->getContentLength();
+			if($expected !== null && $written !== $expected) {
+				throw new StorageException("s3 fetch of ".$path." got ".$written." of ".$expected." bytes");
+			}
+			$complete = true;
+		} catch(StorageException $ex) {
+			throw $ex;
+		} catch(\Throwable $ex) {
+			throw new StorageException("s3 fetch failed for ".$path.": ".$ex->getMessage(), 0, $ex);
+		} finally {
+			fclose($out);
+			// releases async-aws' php://temp mirror of the body
+			unset($result);
+			if(!$complete && is_file($localTmpFile)) @unlink($localTmpFile);
+		}
+	}
+
+	/**
+	 * CopyObject, done by the backend. MetadataDirective COPY keeps every header put() set.
+	 * A single CopyObject stops at 5 GiB, on S3 and on R2 alike (R2's single-request limit
+	 * covers copies); no multipart copy here, so a bigger object's rotation fails.
+	 */
+	public function copy(string $from, string $to): void {
+		try {
+			$this->client->copyObject([
+				"Bucket" => $this->bucket,
+				"Key" => $to,
+				"CopySource" => $this->bucket."/".implode("/", array_map("rawurlencode", explode("/", ltrim($from, "/")))),
+				"MetadataDirective" => "COPY",
+			])->resolve();
+		} catch(\Throwable $ex) {
+			throw new StorageException("s3 copy failed from ".$from." to ".$to.": ".$ex->getMessage(), 0, $ex);
+		}
+	}
+
 	public function delete(string $path): void {
 		try {
 			$this->client->deleteObject([

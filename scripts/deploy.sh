@@ -10,7 +10,7 @@
 #
 #   git clone <repo-url> /var/www/explorer && cd /var/www/explorer
 #   (cd api && composer install --no-dev --optimize-autoloader)
-#   scripts/deploy.sh install       # menu of install steps: checks, configs, dirs, database
+#   scripts/deploy.sh install       # menu of install steps: checks, configs, dirs, database, processor
 #   scripts/deploy.sh vhost         # print a sample Apache vhost for this instance
 #
 # install shows the list of steps with how each one went, and you pick what runs
@@ -57,7 +57,7 @@ environment() {
 }
 
 # Install steps, in the order they normally run, and what the menu calls them.
-STEPS=(check_requirements check_deps setup_configs check_configs setup_dirs setup_php_ini install_database)
+STEPS=(check_requirements check_deps setup_configs check_configs setup_dirs setup_php_ini install_database check_processor)
 LABELS=(
 	"Check PHP requirements"
 	"Check composer dependencies"
@@ -66,6 +66,7 @@ LABELS=(
 	"Create runtime directories"
 	"Write api/src/.user.ini"
 	"Install the database"
+	"Check the image processor (run-fixtures)"
 )
 STATUS=()   # per step: "", "ok" or "failed"
 NEXT=0      # index of the step the menu suggests next
@@ -166,11 +167,14 @@ check_requirements() {
 	php -r 'exit(version_compare(PHP_VERSION, "8.1.0", ">=") ? 0 : 1);' \
 		|| fail "PHP 8.1+ required, found $(php -r 'echo PHP_VERSION;')" || return 1
 
+	# xmlreader: the SVG upload check reads the prolog with it; without it every SVG upload is a 500.
 	local missing=()
-	for ext in gd mysqli dom fileinfo exif; do
+	for ext in gd mysqli dom fileinfo exif mbstring xmlreader; do
 		php -m | grep -qix "$ext" || missing+=("$ext")
 	done
 	[ ${#missing[@]} -eq 0 ] || fail "missing PHP extensions: ${missing[*]}" || return 1
+	# Only needed where source_url_enabled is on (uploads from a URL); intl only for IDN hosts.
+	php -m | grep -qix curl || warn "PHP extension curl is missing: uploads from a URL (source_url_enabled) won't work"
 
 	# The CLI and the web SAPI can have different ini files -- this only checks the CLI one.
 	local upload; upload="$(php -r 'echo ini_get("upload_max_filesize");')"
@@ -248,12 +252,14 @@ check_configs() {
 
 setup_dirs() {
 	info "Creating runtime directories"
-	local logs cache backups
+	local logs cache backups tmp
 	logs="$(conf magrathea.conf logs_path)"; logs="${logs:-$API_DIR/logs}"
 	cache="$(conf magrathea.conf cache_path)"; cache="${cache:-$API_DIR/cache}"
 	# Dumps from the admin's Database > Dumps page and `vendor/bin/magrathea db:dump`.
 	backups="$(conf magrathea.conf backups_path)"; backups="${backups:-$API_DIR/backups}"
-	local dirs=("$logs" "$cache" "$backups")
+	# cron.php's locks and the files it fetches back from storage (--backfill-sha256).
+	tmp="$(conf magrathea.conf processing_tmp_path)"; tmp="${tmp:-$API_DIR/tmp}"
+	local dirs=("$logs" "$cache" "$backups" "$tmp")
 
 	if [ "$(conf storage.conf driver)" = "local" ]; then
 		local storage; storage="$(conf storage.conf local_path)"
@@ -323,12 +329,36 @@ install_database() {
 	if [ "$tables" -gt 0 ]; then
 		warn "database $name already has $tables table(s) -- not loading database.sql"
 		warn "upgrading? apply the files in api/database/migrations/ newer than the installed version by hand"
+		warn "(from 1.4.x to 1.5.0: docs/v1.5.0-migration.md)"
 		return
 	fi
 	info "Loading api/database/database.sql into $name"
 	"${mysql[@]}" "$name" < "$API_DIR/database/database.sql" \
 		|| fail "loading database.sql failed -- the database may be half-loaded; drop its tables before retrying" || return 1
 	echo "    $("${mysql[@]}" -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '$name'") table(s) created"
+}
+
+# Runs the processor's contract fixtures (api/processor/run-fixtures.php) as WEB_USER, the user
+# Explorer runs it as. No processor_command = no thumbnails at all since 1.5.0, so that fails too:
+# move on from the menu if the instance really has no images.
+check_processor() {
+	info "Checking the image processor"
+	if [ -z "$(conf magrathea.conf processor_command)" ]; then
+		fail "magrathea.conf: processor_command is not set -- images get no thumbnails or renditions (docs/deploy.md, \"Image processor\")"
+		return 1
+	fi
+	local cmd=(php "$API_DIR/processor/run-fixtures.php")
+	if [ "$(id -u)" -eq 0 ] && [ "$WEB_USER" != root ]; then
+		# Not as root: the processor would run with root's rights, and leave root-owned files in
+		# processing_tmp_path.
+		command -v runuser >/dev/null \
+			|| fail "running as root and runuser is missing -- run as $WEB_USER: ${cmd[*]}" || return 1
+		cmd=(runuser -u "$WEB_USER" -- "${cmd[@]}")
+	elif [ "$(id -un)" != "$WEB_USER" ]; then
+		warn "running the fixtures as $(id -un), not $WEB_USER: the result says nothing about $WEB_USER's access to the venv"
+	fi
+	"${cmd[@]}" \
+		|| fail "run-fixtures failed -- see above; a broken venv shows as a Python error (docs/deploy.md, \"Image processor\")" || return 1
 }
 
 print_vhost() {
@@ -374,9 +404,12 @@ print_next_steps() {
 	  1. Web server: point the docroot at $API_DIR/src
 	     (scripts/deploy.sh vhost prints an Apache sample). /app needs nothing extra.
 	  2. Open $url/magrathea.php -- with no admin users yet it shows the first-run
-	     form. The admin panel is the only place keys can be created.
-	  3. Cron (daily) for scheduled key deletions:
+	     form. Keys are created there (Keys), or by a consuming project through
+	     POST /provision/keys once admin -> Provisioning has a secret.
+	  3. Cron, as $WEB_USER: scheduled key deletions (daily) and the processing queue
+	     (every minute; without it big images and imports stay "pending" forever):
 	     0 3 * * * php $API_DIR/src/cron.php --run >> $API_DIR/logs/cron.log 2>&1
+	     * * * * * php $API_DIR/src/cron.php --process >> $API_DIR/logs/cron.log 2>&1
 	  4. Smoke test: curl $url/api/v1/version
 	EOF
 }

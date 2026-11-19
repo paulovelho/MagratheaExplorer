@@ -54,6 +54,25 @@ class FileTagControl {
 		}, $rows);
 	}
 
+	/**
+	 * Every listed file's tag names in one query (a listing would otherwise run one per file).
+	 * @param int[] $fileIds
+	 * @return array<int, string[]> file id => tag names; files without tags are absent
+	 */
+	public static function GetTagNamesForFiles(array $fileIds): array {
+		$ids = array_values(array_unique(array_map("intval", $fileIds)));
+		if($ids === []) return [];
+		$rows = Database::Instance()->QueryAll(
+			"SELECT ft.file_id, t.name FROM `tags` t INNER JOIN `file_tags` ft ON ft.tag_id = t.id"
+			." WHERE ft.file_id IN (".implode(",", $ids).") ORDER BY t.id"
+		);
+		$byFile = [];
+		foreach($rows as $row) {
+			$byFile[(int)$row["file_id"]][] = (string)$row["name"];
+		}
+		return $byFile;
+	}
+
 	/** @return int[] ids of files carrying the given tag */
 	public static function GetFileIdsForTag(int $tagId): array {
 		$rows = Database::Instance()->QueryAll(

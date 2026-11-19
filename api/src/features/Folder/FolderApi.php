@@ -2,7 +2,9 @@
 
 namespace MagratheaExplorer\Folder;
 
+use MagratheaExplorer\ApiTime;
 use MagratheaExplorer\ExplorerApiControl;
+use MagratheaExplorer\RequestBool;
 use MagratheaExplorer\Share\ShareControl;
 
 class FolderApi extends ExplorerApiControl {
@@ -11,7 +13,7 @@ class FolderApi extends ExplorerApiControl {
 	public function GetAll(): array {
 		$key = $this->GetRequestKey();
 		$parent = !empty($_GET["parent_uuid"]) ? FolderControl::GetForKeyByUuid($key, (string)$_GET["parent_uuid"]) : FolderControl::GetRoot($key);
-		$folders = FolderControl::GetSimpleWhere("`key_id` = ".(int)$key->id." AND `parent_id` = ".(int)$parent->id);
+		$folders = FolderControl::GetSimpleWhere("`key_id` = ".(int)$key->id." AND `parent_id` = ".(int)$parent->id." AND `deleting_at` IS NULL");
 		return array_map(fn($folder) => $this->FolderView($folder, $parent), $folders);
 	}
 
@@ -41,10 +43,18 @@ class FolderApi extends ExplorerApiControl {
 		return $this->FolderView($folder);
 	}
 
-	/** DELETE /folder/:uuid -- root folders and non-empty folders can't be deleted */
+	/**
+	 * DELETE /folder/:uuid -- the root folder can't be deleted (4005). Without `?recursive=1`, a
+	 * folder that isn't empty can't either (4003). With it, the folder and everything under it
+	 * (FolderDeletion): {"deleted": true} when it's all gone now, {"deleted": false, "pending":
+	 * true} when `cron.php --process` finishes it. Either way the folder is gone for the API.
+	 */
 	public function Delete($params = false): array {
 		$key = $this->GetRequestKey();
 		$folder = FolderControl::GetForKeyByUuid($key, (string)$params["uuid"]);
+		if(RequestBool::Parse($_GET, "recursive") === true) {
+			return FolderDeletion::Delete($key, $folder) ? ["deleted" => true] : ["deleted" => false, "pending" => true];
+		}
 		FolderControl::AssertNotRoot($folder);
 		FolderControl::AssertEmpty($folder);
 		// An empty folder can still be shared -- drop its shares before the FK bites.
@@ -71,7 +81,7 @@ class FolderApi extends ExplorerApiControl {
 			"parent_uuid" => $parent !== null ? $parent->uuid : FolderControl::UuidFor($folder->parent_id),
 			"name" => $folder->name,
 			"is_root" => $folder->IsRoot(),
-			"created_at" => $folder->created_at,
+			"created_at" => ApiTime::Utc($folder->created_at),
 		];
 	}
 

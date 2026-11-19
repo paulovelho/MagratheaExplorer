@@ -1,0 +1,8 @@
+# The processor's venv is built from this file (docs/deploy.md, "Processor"):
+#   python3 -m venv ~/explorer-venv && ~/explorer-venv/bin/pip install -r requirements.txt
+# Pinned to what DreamHost runs (1.5.0): pyvips-binary is the libvips build itself, a
+# self-contained wheel, so dev and every server decode with the same libvips.
+pyvips==3.2.0
+pyvips-binary==8.18.7
+cffi==2.1.1
+pycparser==3.11

@@ -24,4 +24,25 @@ abstract class ExplorerApiControl extends MagratheaApiControl {
 		return $this->requestKey;
 	}
 
+	/**
+	 * What GetPost() (when $_POST is empty) and GetPut() read: the body, parsed by RequestBody.
+	 * JSON by media type, so `application/json; charset=utf-8` works; bad JSON is 40010; a body
+	 * over 1 MB is 413. Overrides MagratheaPHP 3.0.0's, which only checks the Content-Type's last
+	 * four characters (see RequestBody).
+	 */
+	public function GetPhpInput(): array {
+		$contentType = $_SERVER["CONTENT_TYPE"] ?? null;
+		// PHP has already parsed a multipart POST into $_POST and $_FILES, and php://input is
+		// empty for it. An upload with no field but `file` gets here with an empty $_POST and the
+		// whole upload as its Content-Length, which the 1 MB cap would refuse.
+		if(RequestBody::IsMultipart($contentType)) return $_POST;
+		$stream = fopen("php://input", "r");
+		try {
+			$raw = RequestBody::Read($stream, $_SERVER["CONTENT_LENGTH"] ?? null);
+		} finally {
+			fclose($stream);
+		}
+		return RequestBody::Parse($contentType, $raw);
+	}
+
 }

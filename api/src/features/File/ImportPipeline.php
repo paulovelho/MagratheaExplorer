@@ -12,7 +12,9 @@ use MagratheaExplorer\Key\Key;
  * mounted staging area, not a client upload) into one key: the source directory itself
  * becomes a Folder under the chosen destination, mirrored recursively, and every regular
  * file goes through the same UploadPipeline as a real upload (MIME sniffing, image
- * re-encode/thumbnail/metadata strip, key uses/size counters). Symlinks -- files and
+ * re-encode/metadata strip unless the key's verbatim default says verbatim, key uses/size
+ * counters). Renditions are always queued for `cron.php --process`, never made in the
+ * request: an import is many files in one request. Symlinks -- files and
  * directories alike -- are skipped entirely, since following one could escape the source
  * tree or loop on a self-referential link. Runs synchronously in whichever admin request
  * triggers it; the caller is responsible for raising the time limit for large trees.
@@ -67,7 +69,8 @@ class ImportPipeline {
 		try {
 			// Not a real HTTP upload -- is_uploaded_file($fullPath) is false, so
 			// UploadPipeline copies the source file instead of moving it, leaving it intact.
-			$file = UploadPipeline::Handle($key, $folder, $fakeUpload, false, [], $enforceQuota);
+			// No request flags: the key's verbatim default decides, no_convert is off.
+			$file = UploadPipeline::Handle($key, $folder, $fakeUpload, UploadOptions::Resolve($key, null, null, [], $enforceQuota, false));
 			$stats["files_imported"]++;
 			$stats["bytes_imported"] += (int)$file->size;
 		} catch(\Throwable $ex) {

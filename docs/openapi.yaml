@@ -15,21 +15,33 @@ info:
     not only the HTTP status.
 
     **HTTP status.** Taken from the error code: a 4-digit code is divided by 10 (`4042` -> 404,
-    `4031` -> 403, `5001` -> 500). Get the full code -> message map from `GET /error-codes`.
+    `4031` -> 403, `5001` -> 500), a 5-digit code by 100 (`40010` -> 400). Get the full
+    code -> message map from `GET /error-codes`.
 
-    **Auth.** `Authorization: Bearer <key-uuid>` on every route except the ones marked
-    `security: []`. Keys are created by an operator in the admin panel (`/admin.php`). There is
-    no public route that creates one. Any auth problem (missing header, unknown key, inactive
+    **Auth.** `Authorization: Bearer <key-secret>` on every route except the ones marked
+    `security: []` and `POST /provision/keys`. Keys are created by an operator in the admin panel
+    (`/admin.php`), or by a consuming project with `POST /provision/keys` and the provisioning
+    secret, a different credential (`provisioningBearer`) that works on that route only. A key's
+    secret is shown once, when the key is created or its secret rotated: only its hash is stored,
+    so nobody can read it again. Any auth problem (missing header, unknown key, inactive
     key, expired key) gives the same generic 401 with `code: 401`. The specific codes
     4011/4012/4013/4041 are listed by `/error-codes` but never reach a client.
 
     **Request bodies.** POST and PUT take `application/x-www-form-urlencoded` (what the
-    first-party app sends) or `application/json`. JSON is only detected when the
-    `Content-Type` header *ends in* `json`: `application/json; charset=utf-8` is parsed as a
-    form, every field reads as missing, and you get a 4001. Uploads are `multipart/form-data`.
+    first-party app sends) or `application/json`, except a file upload (`POST /files` with
+    `file`), which is `multipart/form-data`. `POST /files` with `source_url` takes any of the
+    three. A body is JSON when its media type is `application/json` or ends in
+    `+json`, whatever its parameters and case (`application/json; charset=utf-8` is fine). It
+    has to be an object: invalid JSON, or a JSON string, number or list, gets 40010 (HTTP 400).
+    Bodies other than uploads stop at 1 MB (413).
 
-    **Timestamps** are `YYYY-MM-DD HH:MM:SS` strings in the server's configured timezone
-    (`timezone` in `magrathea.conf`). They carry no offset and are not ISO 8601.
+    **Retries.** `POST /files` and `POST /provision/keys` take an `Idempotency-Key` header. A retry
+    with the same key gets what the first request made, as it is now, instead of a second file
+    or key; while the first is still running it gets 4091 (409), and with a different request
+    4221 (422). Failed requests aren't remembered: their retry runs again.
+
+    **Timestamps** are ISO 8601 in UTC, always with `Z`: `2026-11-17T06:22:10Z`, whole
+    seconds. Before 1.5.0 they were the server's local time (`YYYY-MM-DD HH:MM:SS`, no offset).
 
     **Identifiers.** Folders, files and shares are addressed by UUIDv7 (lowercase). Integer
     ids are never exposed.
@@ -59,6 +71,15 @@ tags:
     description: Owner-side management of public share links.
   - name: public-shares
     description: Opening a share link. No auth. The share uuid is the credential.
+  - name: direct-uploads
+    description: >
+      Browser uploads without the key: the backend mints a single-use token, the browser posts
+      the file with it, the backend confirms by the token's id.
+  - name: provisioning
+    description: >
+      Creating keys from a consuming project's backend, with the provisioning secret (admin →
+      Provisioning). Creating them is all it does: each key is then used, rotated and offboarded
+      with its own secret (the `key` routes), and its limits are set by the operator.
 
 paths:
 
@@ -135,8 +156,8 @@ paths:
       operationId: getChangelog
       summary: The 5 most recent changelog entries (server-cached)
       description: >
-        Only `new`, `fix` and `improvement` bullets are included, and only the first line of
-        each one, so long descriptions come back cut off mid-sentence.
+        Every entry, whole: its wrapped lines are joined with a space. `date` is null while a
+        version is unreleased. Descriptions are the changelog's Markdown, inline code and all.
       security: []
       responses:
         "200":
@@ -182,7 +203,7 @@ paths:
     get:
       tags: [key]
       operationId: getKey
-      summary: The calling key (its uuid is never echoed back)
+      summary: The calling key (never its secret, which isn't stored)
       responses:
         "200":
           description: OK
@@ -268,6 +289,121 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /key/rotate-secret:
+    post:
+      tags: [key]
+      operationId: rotateKeySecret
+      summary: A new secret for the calling key
+      description: |
+        Returns the key's new secret, once. The secret this request was sent with fails from the
+        very next request on: no grace period. Store the new one before dropping the old.
+
+        If this response is lost, the key is locked out (the old secret is dead, the new one
+        unknown) until an operator rotates it in the admin. No body.
+      responses:
+        "200":
+          description: Rotated
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [secret]
+                        properties:
+                          secret: { $ref: "#/components/schemas/KeySecret" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  # ---------------------------------------------------------------- provisioning
+
+  /provision/keys:
+    post:
+      tags: [provisioning]
+      operationId: provisionKey
+      summary: Create a key (provisioning secret only)
+      security:
+        - provisioningBearer: []
+      description: |
+        Creates a key with its root folder, and returns it as `GET /key` shows it, plus its
+        `secret`: the only time the secret is ever shown. Store it right away.
+
+        The body takes `name` and nothing else. The key's settings (storage and upload limits,
+        verbatim default, rendition profile) are the ones the operator set for provisioned keys
+        (admin → Provisioning), copied when the key is created. Any other field is refused with
+        40013 naming it.
+
+        After this, the key is used with its own secret: `GET /key` and `/key/usage` for usage,
+        `POST /key/rotate-secret` to rotate it, `DELETE /key` to offboard it (deleted after 14
+        days, by `cron.php --run`). The provisioning secret can't read, change or delete any key.
+
+        Limits: the operator's `max_keys` (4033 when reached, pending deletions count), and names
+        are unique across the instance (4094). Failed authentications are limited to 10 per 15
+        minutes per client IP: the next attempts get 4291 (HTTP 429) with `Retry-After`, whatever
+        the secret.
+
+        **Retries:** send an `Idempotency-Key`. If the response is lost, the retry with the same
+        key gets the same key back, `Idempotent-Replayed: true`, with a **new** `secret`: only the
+        first one's hash was stored, so it can't be returned, and the key's secret is rotated
+        (the first one stops working; it never reached you). So retry only after a failure: a
+        duplicate of a request whose response did arrive kills the secret you stored. A key
+        offboarded since gets 4041. Without the header, a retry after a lost response gets 4094
+        and the operator has to delete the stray key.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProvisionKeyInput" }
+          application/x-www-form-urlencoded:
+            schema: { $ref: "#/components/schemas/ProvisionKeyInput" }
+      responses:
+        "200":
+          description: Created (or replayed, with a new secret)
+          headers:
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ProvisionedKey" }
+        "400":
+          description: "`name` missing (4001), invalid or an unknown field (40013), an invalid JSON body (40010), or an invalid `Idempotency-Key` (40011)"
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+        "401":
+          description: >
+            Not the provisioning secret (missing header, a key's secret, a rotated or revoked
+            secret, provisioning turned off): `code: 401`, message
+            `Authorization Failed! (IsProvisioning = false)`. Each one counts toward the rate limit.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+        "403":
+          description: "The instance's limit of provisioned keys is reached (4033)"
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+        "404":
+          description: "Replay of a key that has been deleted since (4041)"
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+        "409":
+          description: "A key with this name already exists (4094), or a request with this `Idempotency-Key` is still running (4091): retry later"
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+        "413":
+          description: "Body over 1 MB"
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+        "422": { $ref: "#/components/responses/IdempotencyKeyReused" }
+        "429":
+          description: "Too many failed authentications from this client (4291). Wait `Retry-After` seconds."
+          headers:
+            Retry-After:
+              description: Seconds until the 15-minute window ends.
+              schema: { type: integer, minimum: 1, maximum: 900 }
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+        "500": { $ref: "#/components/responses/ServerError" }
+
   # ---------------------------------------------------------------- folders
 
   /folders:
@@ -302,7 +438,7 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/FolderOk" }
         "400":
-          description: "Missing name (4001), or a sibling with the same name already exists (4004)"
+          description: "Missing name (4001), or a sibling with the same name already exists (4004), or an invalid JSON body (40010)"
           content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -332,22 +468,52 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/FolderOk" }
         "400":
-          description: "Empty name (4001), or a sibling already has that name (4004)"
+          description: "Empty name (4001), or a sibling already has that name (4004), or an invalid JSON body (40010)"
           content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
     delete:
       tags: [folders]
       operationId: deleteFolder
-      summary: Delete an empty, non-root folder
-      description: >
-        Deletes nothing recursively. A folder with subfolders or files gives 4003. To remove a
-        tree, delete its files, then its subfolders deepest-first. Shares pointing at the folder
-        are deleted with it.
+      summary: Delete a folder (an empty one, or with `recursive=1` everything under it)
+      description: |
+        Without `recursive`: only an empty folder, else 4003. Shares pointing at it are deleted
+        with it.
+
+        With `recursive=1`: the folder, its subfolders and every file in them (objects,
+        renditions, tags, shares), lowering the key's `total_size` per file. The whole subtree
+        is gone for the API **at once**: lookups, listings, uploads into it and public shares of
+        it answer 404, and its name is free in its parent. A subtree of up to 200 files (an
+        instance setting) is deleted in the request: `{"deleted": true}`. A bigger one answers
+        `{"deleted": false, "pending": true}` and the server deletes it in the background, a
+        bounded amount per minute: a 100k-file tree takes many minutes, and `total_size` goes
+        down as it goes. Until then its files still answer `GET /file/{uuid}` and
+        `POST /files/lookup`.
+
+        The root folder is 4005 either way: offboard the whole key with `DELETE /key` instead.
+      parameters:
+        - name: recursive
+          in: query
+          required: false
+          description: "`1`/`true`: delete everything under it too. Any other boolean value means no; anything else is 4009."
+          schema: { type: string, example: "1" }
       responses:
-        "200": { $ref: "#/components/responses/DeletedOk" }
+        "200":
+          description: Deleted, or (recursive only) deleting in the background
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          deleted: { type: boolean, description: "false only for a recursive delete left to the background" }
+                          pending: { type: boolean, enum: [true], description: Present when `deleted` is false. }
         "400":
-          description: "Folder not empty (4003), or it's the root folder (4005)"
+          description: "Folder not empty and no `recursive` (4003), it's the root folder (4005), or `recursive` isn't a boolean (4009)"
           content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -417,43 +583,123 @@ paths:
         declares anything but plain text entities, or that aren't well-formed. Anything the server doesn't
         recognize is stored as `file_type: other` and always served as a download.
 
-        Images: metadata is always stripped. They're re-encoded to webp unless `no_convert` is
-        set, and a square crop-to-fill thumbnail (`thumbnail_size` px) is built once, here.
-        SVGs and animated GIFs are never converted, and SVGs get no thumbnail.
+        Images with `verbatim` (the flag, else the key's `verbatim_default`): stored byte for
+        byte as sent, EXIF and GPS included. Otherwise metadata is stripped and the image is
+        re-encoded to webp unless `no_convert` is set. `no_convert` still re-encodes through GD
+        (8 bits per channel, no ICC/DPI/EXIF, JPEG at quality 90). Re-encoding holds the image in
+        memory, so above the instance's conversion limits (25 MB / 40 megapixels by default; a
+        JPEG that has to be turned upright counts 1.5x its pixels) a non-verbatim image is
+        refused with 4131. SVGs and animated GIFs are never converted.
 
-        Limits: the effective max size is the smallest of `/settings`'s `max_upload_size`,
-        PHP's `upload_max_filesize` and PHP's `post_max_size`. Going over any of them gives
-        4002. The key's caps are checked before processing, against the raw upload size.
+        Processing (images only): the instance's processor reads the image's properties and
+        makes the key's renditions (`GET /key`'s `rendition_profile`; by default one `thumb`,
+        `thumbnail_size` px square), from the stored bytes. Up to 16 MB and 40 megapixels (the
+        instance's inline limits), that happens during this request: the response has
+        `processing.status: ready` and the renditions. Bigger images get `pending`, the
+        properties that can be read from the headers, and `renditions: null`; the server makes
+        the renditions within a minute or two: poll `GET /file/{uuid}` until the status isn't
+        `pending`. Processing never fails an upload: the file is stored either way, and a
+        failure shows in `processing`. Other file types, and instances without a processor,
+        get `none`.
+
+        Booleans (`verbatim`, `no_convert`): `1 true yes on` / `0 false no off` or empty,
+        case-insensitive. Anything else gives 4009.
+
+        Limits: the max size is `GET /key`'s `max_upload_size`, the key's own limit (else
+        `/settings`'s instance default) capped by PHP's `upload_max_filesize` and `post_max_size`.
+        Going over it gives 4002, whose message says the limit. The key's caps are checked
+        before processing, against the raw upload size.
+
+        Retries: send an `Idempotency-Key` (one per file, kept for the retries). A retry after
+        the first upload succeeded gets that file, as it is now (`processing` included), with
+        `Idempotent-Replayed: true`: no second file, `uses` and the stored size unchanged, the
+        key's caps not checked again. The request is the same when the file's bytes and name
+        (`name`, else the file part's filename), `folder_uuid`, `tags` (in any order) and the
+        flags as sent are; for `source_url`, the URL (normalized: scheme and host lower case,
+        no `:443`, no fragment) and `name` as sent instead of the bytes and the file name. A
+        retry while the first is still running gets 4091, a different request 4221 (a key
+        reused between a `file` and a `source_url` upload included). A failed upload isn't
+        remembered: its retry runs again. A file deleted since gets 4043.
+
+        **From a URL (`source_url`).** Instead of `file`, send an `https://` URL and the server
+        downloads it, then stores it exactly as an upload (sniffing, `verbatim`, conversion,
+        renditions, limits). Exactly one of `file` and `source_url` (4001 otherwise). Off unless
+        the instance turns it on (`/settings`' `source_url_enabled`; 40012 "not enabled on this
+        instance" otherwise). The rules:
+        - **https only**, port 443 (an instance can allow others), no `user:pass@`;
+        - **public hosts only:** a name must resolve to public addresses only (one private
+          answer refuses it), an IP literal must be public; `localhost`, single-label names
+          (`intranet`) and IPv4 written in any form but four decimal numbers
+          (`2130706433`, `0x7f.1`) are refused. Refusals are 40012, whose message gives the rule
+          (never the address). A name that doesn't exist gets the same 40012 as one that
+          resolves to a private address, word for word: telling them apart would let a caller
+          probe the server's internal names. Only a DNS lookup that failed outright (a timeout,
+          SERVFAIL) is a 5021;
+        - **at most 3 redirects**, each held to the same rules;
+        - **the upstream must answer 200** (or 203) without a `Content-Encoding`: any other
+          status, a TLS or connection error, or a timeout is 5021 (HTTP 502), whose message
+          says which (`upstream 404`, `timed out after 90 s`, `TLS certificate invalid`);
+        - **size:** the same `max_upload_size` as an upload (4002); a `Content-Length` over it,
+          or over the key's storage cap (4032), is refused before the body is downloaded;
+        - **time:** 90 s for the whole download by default (the instance's
+          `source_url_timeout_s`), at least 1 KB/s over any 30 s, 10 s to connect.
+
+        The file's `name`: `name`, else the response's `Content-Disposition` filename, else the
+        last path segment of the URL (after redirects), else `download`. The upstream's
+        Content-Type is ignored. Nothing is sent but the URL: no cookies or credentials, a
+        `User-Agent: MagratheaExplorer/<version>`. A presigned URL (S3, R2) is the way to share
+        a private object.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
           multipart/form-data:
             schema:
               type: object
-              required: [file]
+              description: "`file`, or (rarely useful here) `source_url`: exactly one."
               properties:
                 file:
                   type: string
                   format: binary
                   description: Must be the field named `file`. One file per request.
+                source_url:
+                  type: string
+                  description: See `application/json`. Not with `file`.
+                name:
+                  type: string
+                  maxLength: 255
+                  description: >
+                    The file's display name. Absent or blank = the file part's filename.
+                    No control characters (40013).
                 folder_uuid:
                   type: string
                   format: uuid
                   description: Defaults to the key's root folder.
+                verbatim:
+                  type: string
+                  enum: ["1", "true", "yes", "on", "0", "false", "no", "off", ""]
+                  description: >
+                    Store the bytes exactly as sent: no metadata strip, no re-encode. Absent =
+                    the key's `verbatim_default` (`GET /key`); `0` overrides a verbatim default.
+                    Implies `no_convert`.
                 no_convert:
                   type: string
-                  enum: ["1", "0"]
+                  enum: ["1", "true", "yes", "on", "0", "false", "no", "off", ""]
                   description: >
-                    Images only. `1` keeps the original format (metadata is still stripped).
-                    PHP truthiness: any non-empty value except `0` counts as true, so `false`
-                    means *true*. Send `1`, or leave the field out.
+                    Images only. Keeps the original format. Metadata is still stripped and the
+                    pixels still re-encoded through GD: use `verbatim` to keep the bytes.
                 tags:
                   type: string
                   description: Comma-separated tag names, e.g. `invoice,2026`.
+          application/json:
+            schema: { $ref: "#/components/schemas/SourceUrlUploadInput" }
+          application/x-www-form-urlencoded:
+            schema: { $ref: "#/components/schemas/SourceUrlUploadInput" }
       responses:
-        "200": { $ref: "#/components/responses/FileOk" }
+        "200": { $ref: "#/components/responses/FileUploadOk" }
         "400":
-          description: "No `file` field (4001), or the file is too large (4002)"
+          description: "Not exactly one of `file` and `source_url` (4001), the file is above the key's `max_upload_size` (4002), an invalid boolean (4009), an invalid JSON body (40010), an invalid `Idempotency-Key` (40011), a `source_url` refused or uploads from a URL not enabled (40012), or an invalid `name`, `tags` or `source_url` type (40013)"
           content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
         "401":
           description: "Bad/inactive/expired key (generic 401), or the key has a pending scheduled deletion (4014)"
@@ -462,10 +708,45 @@ paths:
           description: "Upload count cap reached (4031), or this file would exceed the storage cap (4032)"
           content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: "A request with this `Idempotency-Key` is still running (4091): retry later"
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+        "413":
+          description: "A non-verbatim image above the conversion limits (4131): send it with `verbatim=1`"
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
         "415":
           description: "Executable/script content, or the type could not be detected (4151)"
           content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+        "422": { $ref: "#/components/responses/IdempotencyKeyReused" }
         "500": { $ref: "#/components/responses/ServerError" }
+        "502":
+          description: "The `source_url` download failed (5021): the message says why (`upstream 404`, `DNS lookup failed for …`, `timed out after 90 s`, `too slow …`, `TLS certificate invalid`, `upstream sent Content-Encoding: gzip …`). Retrying later can work."
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+
+  /files/lookup:
+    post:
+      tags: [files]
+      operationId: lookupFiles
+      summary: Many files by uuid, across folders, in one request
+      description: |
+        Returns the key's files among `uuids`, in the order they were asked, with the same
+        shape as `GET /files`. Uuids that are unknown, another key's or malformed are left out
+        (no error): compare the response with what you asked to find the missing ones.
+        Duplicates count once. Use it to poll `processing.status` for many uploads at once.
+
+        `uuids`: 1 to 100 distinct items (malformed ones count). As JSON, a list; as a form,
+        `uuids[]=…&uuids[]=…`. Missing → 4001; not a list, empty, or over 100 → 40013.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LookupInput" }
+          application/x-www-form-urlencoded:
+            schema: { $ref: "#/components/schemas/LookupInput" }
+      responses:
+        "200": { $ref: "#/components/responses/FileListOk" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
 
   /file/{uuid}:
     parameters:
@@ -495,6 +776,9 @@ paths:
             schema: { $ref: "#/components/schemas/NameBody" }
       responses:
         "200": { $ref: "#/components/responses/FileOk" }
+        "400":
+          description: "An invalid JSON body (40010)"
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
     delete:
@@ -502,13 +786,74 @@ paths:
       operationId: deleteFile
       summary: Delete a file from storage and the database
       description: >
-        Removes the stored object and its thumbnail, detaches its tags, deletes its shares and
+        Removes the stored object and its renditions, detaches its tags, deletes its shares and
         lowers the key's `total_size`. `uses` is never lowered. Once this returns, every URL
         of the file stops working (subject to any CDN cache in front of the bucket).
       responses:
         "200": { $ref: "#/components/responses/DeletedOk" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/ServerError" }
+
+  /file/{uuid}/renditions:
+    parameters:
+      - $ref: "#/components/parameters/Uuid"
+    post:
+      tags: [files]
+      operationId: regenerateRenditions
+      summary: Make the file's renditions again from the key's current profile
+      description: |
+        For an image: queues a new processing run from the key's current `rendition_profile`
+        and answers right away with `processing.status: pending` (`renditions` and
+        `thumbnail_url` are null until it's done: poll `GET /file/{uuid}`). Any run already
+        queued or running for the file is cancelled, so calling this twice leaves one.
+
+        The new renditions get **new URLs**. Stored objects are served as immutable (cached
+        for a year), so a rendition is never overwritten in place: once the new run finishes,
+        the old rendition URLs stop working. If it fails, the old renditions stay. With an
+        empty profile (`[]`), the renditions are deleted and the status is `none`.
+
+        Use it after changing a key's profile, for files from before 1.5.0 (their thumbnail
+        has null `width`/`height`/`size`), or to retry a `failed` file. A file that isn't an
+        image has nothing to regenerate: it comes back unchanged, status `none`. An instance
+        without a processor answers 5004.
+      responses:
+        "200": { $ref: "#/components/responses/FileOk" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/ServerError" }
+
+  /file/{uuid}/rotate:
+    parameters:
+      - $ref: "#/components/parameters/Uuid"
+    post:
+      tags: [files]
+      operationId: rotateFileUrls
+      summary: New URLs for the file and its renditions; the old ones stop working at the origin
+      description: |
+        Copies the original and every rendition to new random paths, switches the file to
+        them, then deletes the old objects. The response is the File with its new `url`,
+        `renditions` URLs and `thumbnail_url`: **store them**, every URL you had is dead at the
+        origin. Same uuid, bytes, name and tags. Share pages show the new URLs at once (shares
+        point at the file, not at a URL).
+
+        **Behind a CDN this isn't revocation.** Objects are served with
+        `Cache-Control: public, max-age=31536000, immutable`, so an old URL that was ever fetched
+        through the CDN (an R2 custom domain is behind Cloudflare's cache) can keep being served
+        from the edge for **up to a year**, until the cache evicts it or someone purges it. The
+        server purges nothing.
+
+        Not idempotent and doesn't read `Idempotency-Key`: every call rotates again, which is
+        harmless. A pending processing run doesn't block it. 4093 (409) when a processing run
+        committed new renditions while it was copying: nothing changed, retry. 5001 when a
+        storage copy failed: nothing changed.
+      responses:
+        "200": { $ref: "#/components/responses/FileOk" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: "The file's renditions changed while it was being rotated (4093): nothing changed, retry"
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
         "500": { $ref: "#/components/responses/ServerError" }
 
   /file/{uuid}/tags:
@@ -528,7 +873,7 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/FileOk" }
         "400":
-          description: "Empty tag name (4008)"
+          description: "Empty tag name (4008), or an invalid JSON body (40010)"
           content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -555,6 +900,138 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
 
   # ---------------------------------------------------------------- shares (owner)
+
+  # ---------------------------------------------------------------- direct uploads
+
+  /upload-tokens:
+    post:
+      tags: [direct-uploads]
+      operationId: createUploadToken
+      summary: Mint a single-use token a browser uploads one file with
+      description: |
+        Your backend calls this with its key, hands `upload_url` to the browser, and the browser
+        posts the file there (`POST /upload/{token}`) without ever seeing the key. Then your
+        backend confirms with `GET /upload-tokens/{id}`: never trust the uuid the browser reports.
+
+        Every field is optional; an unknown field is 40013 (so a typo can't mint a looser token).
+        The key has to be able to upload right now (active, not expired, no pending deletion,
+        upload count left), or this is refused like an upload would be.
+
+        `expires_at` is checked when the upload **arrives**, which for PHP is when the whole body
+        is in: a 150 MB upload that starts a minute before expiry and takes three is refused.
+        Pick `expires_in` for the slowest upload you expect (at most 15 minutes).
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UploadTokenInput" }
+          application/x-www-form-urlencoded:
+            schema: { $ref: "#/components/schemas/UploadTokenInput" }
+      responses:
+        "200":
+          description: The token. `token` and `upload_url` are shown only here.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/UploadTokenMinted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "The key can't upload: upload count (4031) or storage (4032) limit reached"
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /upload-tokens/{uuid}:
+    parameters:
+      - $ref: "#/components/parameters/Uuid"
+    get:
+      tags: [direct-uploads]
+      operationId: getUploadToken
+      summary: What became of an upload token (the backend's confirmation)
+      description: >
+        By the token's `id`, not the token: the token stays out of your backend's request logs.
+        Only the key's own tokens (another key's is 4046). `used` carries the File; `failed`
+        carries the refusal (`error`), and the token is used up: mint a new one. A `pending`
+        token past `expires_at` reads `expired`. Tokens are deleted a week after they expire.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/UploadTokenState" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /upload/{token}:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: 64 lowercase hex characters, from `upload_url`. It's the credential.
+        schema: { type: string, pattern: "^[0-9a-f]{64}$" }
+    post:
+      tags: [direct-uploads]
+      operationId: uploadWithToken
+      summary: Upload one file with an upload token (from a browser, no key)
+      security: []
+      description: |
+        No `Authorization` header. A multipart POST with only a `file` part and no custom
+        headers is a CORS simple request: no preflight, and `Access-Control-Allow-Origin: *`
+        answers it. Don't send `Idempotency-Key`: the token is single use, which already makes
+        the upload safe to retry.
+
+        Checked against the token: its `max_size` (4002) and `file_types` (4151, by the sniffed
+        type), plus everything a `POST /files` checks. Stored with the token's folder, flags and
+        tags. **A refusal (any 4xx) uses the token up**, and `GET /upload-tokens/{id}` says why;
+        a server error (5xx) leaves it usable until it expires, so retry those. A request with
+        no `file` part at all is a 4001 and doesn't use it up.
+
+        **Through Cloudflare's proxy, request bodies stop at 100 MB** (Free and Pro): a bigger
+        file gets a 413 from the edge before the server sees it, and the token stays unused.
+        For bigger browser uploads the API host has to be DNS-only.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "200": { $ref: "#/components/responses/FileOk" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: "The key behind the token can't upload any more: expired (4012), inactive (4013), deletion pending (4014). The token is used up"
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+        "403":
+          description: "The key's upload count (4031) or storage (4032) limit is reached. The token is used up"
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+        "404":
+          description: "Unknown token (4046), or its folder is gone (4042, which uses it up)"
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+        "409":
+          description: "The token was already used, refused before, or another upload with it is running (4092)"
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+        "410":
+          description: "The token expired before the upload arrived (4101): mint a new one"
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+        "413":
+          description: "Image too large to convert (4131): mint a token with `verbatim`"
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+        "415":
+          description: "A type the token doesn't allow, or one never accepted (4151)"
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+        "500": { $ref: "#/components/responses/ServerError" }
 
   /shares:
     get:
@@ -698,9 +1175,17 @@ components:
       type: http
       scheme: bearer
       description: >
-        The key's uuid, as given by the operator who created it in the admin panel. A
-        long-lived secret with full read/write/delete power over everything the key owns.
-        No login flow, no refresh, no scopes.
+        The key's secret, a UUID: given once to whoever created the key (an operator in the
+        admin panel, or `POST /provision/keys`) or rotated its secret. A long-lived secret with
+        full read/write/delete power over everything the key owns. No login flow, no refresh,
+        no scopes.
+    provisioningBearer:
+      type: http
+      scheme: bearer
+      description: >
+        The provisioning secret, `xpv_` + 64 hex characters, generated by the operator in admin
+        → Provisioning and shown once. Only `POST /provision/keys` takes it, and no other route
+        does. Backend only: never in a browser.
 
   parameters:
     Uuid:
@@ -708,6 +1193,24 @@ components:
       in: path
       required: true
       schema: { type: string, format: uuid }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: >
+        Makes the request safe to retry. Any string of 1 to 255 printable ASCII characters
+        (surrounding spaces dropped, case-sensitive), e.g. a UUID: one per logical operation, saved
+        before the first try and sent on every retry. Unique per credential (key, or the
+        provisioning secret), remembered at least 24 h after the first request. Reusing one
+        for another request gets 4221. Invalid → 40011.
+      schema: { type: string, minLength: 1, maxLength: 255, pattern: "^[ -~]+$" }
+
+  headers:
+    IdempotentReplayed:
+      description: >
+        `true` when this response is a replay: an earlier request with the same
+        `Idempotency-Key` made the resource, and nothing new was made. Absent otherwise.
+      schema: { type: string, enum: ["true"] }
 
   responses:
     FolderOk:
@@ -742,6 +1245,18 @@ components:
               - type: object
                 properties:
                   data: { $ref: "#/components/schemas/File" }
+    FileUploadOk:
+      description: Stored (or replayed)
+      headers:
+        Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/SuccessEnvelope"
+              - type: object
+                properties:
+                  data: { $ref: "#/components/schemas/File" }
     FileListOk:
       description: OK
       content:
@@ -767,8 +1282,15 @@ components:
                     type: object
                     properties:
                       deleted: { type: boolean, enum: [true] }
+    IdempotencyKeyReused:
+      description: >
+        This `Idempotency-Key` was used for a different request (4221): another file, URL,
+        folder, tags, flags or name. A client bug: use a new key per operation.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
     BadRequest:
-      description: "Invalid or missing input (4001-4008)"
+      description: "Invalid or missing input (4001-4009, 40013), or an invalid JSON body (40010)"
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
@@ -801,7 +1323,7 @@ components:
               code: 4042
               message: Folder not found
     ServerError:
-      description: "Storage backend error (5001), image processing failure (5002), token generation exhausted (5003), bad server config (5004), or an unhandled error (no `code`)"
+      description: "Storage backend error (5001), image processing failure (5002), token generation exhausted (5003), bad server config or no processor for a regenerate (5004), or an unhandled error (no `code`)"
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
@@ -848,9 +1370,10 @@ components:
 
     Timestamp:
       type: string
-      pattern: '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$'
-      example: "2026-11-17 03:22:10"
-      description: Server-local time (`timezone` in magrathea.conf). No offset.
+      format: date-time
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$'
+      example: "2026-11-17T06:22:10Z"
+      description: ISO 8601, UTC, whole seconds, always ending in `Z`.
 
     FileType:
       type: string
@@ -863,14 +1386,24 @@ components:
         max_upload_size:
           type: string
           description: >
-            The configured cap, as a string, normally a byte count. The real limit may be
-            lower because PHP's own limits also apply.
+            The instance default, as configured (a string, normally a byte count). A key may
+            have its own limit, and PHP's limits apply on top: `GET /key`'s `max_upload_size`
+            is the one that applies to a key.
           example: "5242880"
         max_upload_size_formatted: { type: string, example: "5 MB" }
         thumbnail_size:
           type: integer
-          description: Edge, in px, of the square image thumbnails.
+          description: >
+            Edge, in px, of the square `thumb` in the instance's default rendition profile. A
+            key with its own profile may differ: `GET /key`'s `rendition_profile` is the one
+            that applies.
           example: 200
+        source_url_enabled:
+          type: boolean
+          description: >
+            Whether `POST /files` takes `source_url` (uploads from a URL) on this instance. Off
+            unless the operator turns it on; when it's false, `source_url` gets 40012.
+          example: false
 
     ChangelogEntry:
       type: object
@@ -882,7 +1415,7 @@ components:
           items:
             type: object
             properties:
-              type: { type: string, enum: [new, fix, improvement, improvements] }
+              type: { type: string, enum: [new, fix, improvement, improvements, breaking, db, upgrade] }
               description: { type: string }
 
     Key:
@@ -903,14 +1436,110 @@ components:
           type: integer
           nullable: true
           description: Cap on `total_size`, in MiB. null = unlimited.
+        verbatim_default:
+          type: boolean
+          description: >
+            Whether an upload that doesn't send `verbatim` is stored verbatim. Effective value:
+            the key's own setting, else the instance's (false unless the operator changed it).
+        max_upload_size:
+          type: integer
+          format: int64
+          description: >
+            Largest upload this key accepts, in bytes (4002 above it). Effective value: the
+            key's own limit, else the instance's (`/settings`), never above PHP's
+            `upload_max_filesize`/`post_max_size`.
+          example: 157286400
+        rendition_profile:
+          type: array
+          nullable: true
+          items: { $ref: "#/components/schemas/RenditionSpec" }
+          description: >
+            The renditions this key's images get. Effective value: the key's own profile (set
+            by the operator in the admin), else the instance default, one `thumb`. An empty list
+            means none. null only when the key's stored profile is broken: its image uploads
+            then get processing status `failed`, which says why.
         expiration:
           allOf: [{ $ref: "#/components/schemas/Timestamp" }]
           nullable: true
         active: { type: boolean }
         created_at: { $ref: "#/components/schemas/Timestamp" }
 
+    KeySecret:
+      type: string
+      format: uuid
+      description: >
+        A key's bearer secret. Shown only here: it isn't stored (only its hash is), so it can't
+        be read again. Lost = rotate it.
+      example: "5f0c2a1e-8d3b-4c7a-9e61-2b4d8f0a7c35"
+
+    SourceUrlUploadInput:
+      type: object
+      required: [source_url]
+      description: "`POST /files` from a URL (see the route). Off unless the instance enables it."
+      properties:
+        source_url:
+          type: string
+          maxLength: 8192
+          description: >
+            An `https://` URL on a public host, port 443. Spaces and non-ASCII characters in the
+            path or query are percent-encoded; the fragment is dropped.
+          example: "https://bucket.example.r2.cloudflarestorage.com/print/0042.tif?X-Amz-Signature=…"
+        name:
+          type: string
+          maxLength: 255
+          description: >
+            The file's display name. Absent or blank = the `Content-Disposition` filename, else
+            the URL's last path segment, else `download`. No control characters (40013).
+        folder_uuid:
+          type: string
+          format: uuid
+          description: Defaults to the key's root folder.
+        verbatim:
+          description: "As on a multipart upload: `1 true yes on` / `0 false no off`, or a JSON boolean."
+          oneOf:
+            - type: boolean
+            - type: string
+              enum: ["1", "true", "yes", "on", "0", "false", "no", "off", ""]
+        no_convert:
+          description: As on a multipart upload.
+          oneOf:
+            - type: boolean
+            - type: string
+              enum: ["1", "true", "yes", "on", "0", "false", "no", "off", ""]
+        tags:
+          description: Comma-separated, or (JSON) a list of tag names.
+          oneOf:
+            - type: string
+              example: "print,2026"
+            - type: array
+              items: { type: string }
+
+    ProvisionKeyInput:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Trimmed. Unique across the instance (4094). No control characters.
+          example: workspace-42
+
+    ProvisionedKey:
+      description: "`GET /key`'s view of the new key, plus its secret."
+      allOf:
+        - type: object
+          required: [secret]
+          properties:
+            secret: { $ref: "#/components/schemas/KeySecret" }
+        - $ref: "#/components/schemas/Key"
+
     KeyUsage:
       type: object
+      description: >
+        Originals only: renditions (thumbnails, previews) never count toward `total_size` or
+        `usage_limit_mb`.
       properties:
         uses: { type: integer }
         usage_limit: { type: integer, nullable: true }
@@ -950,6 +1579,82 @@ components:
       properties:
         name: { type: string }
 
+    UploadTokenInput:
+      type: object
+      properties:
+        folder_uuid:
+          type: string
+          format: uuid
+          description: Where the file goes. Default the key's root folder. Checked again when the upload arrives.
+        max_size:
+          type: integer
+          minimum: 1
+          description: Bytes. At most, and by default, `GET /key`'s `max_upload_size`.
+        file_types:
+          description: Allowed types, by what the content sniffs as. Default any. A list, or comma-separated in a form.
+          oneOf:
+            - type: array
+              minItems: 1
+              items: { $ref: "#/components/schemas/FileType" }
+            - type: string
+              example: image,video
+        expires_in:
+          type: integer
+          minimum: 60
+          maximum: 900
+          default: 900
+          description: Seconds until the token expires.
+        verbatim: { type: boolean, description: "As on `POST /files`. Default: the key's `verbatim_default` at upload time." }
+        no_convert: { type: boolean }
+        tags:
+          description: As on `POST /files`. Each at most 100 characters.
+          oneOf:
+            - type: array
+              items: { type: string }
+            - type: string
+
+    UploadTokenMinted:
+      type: object
+      properties:
+        id: { type: string, format: uuid, description: "The token's public id: confirm with `GET /upload-tokens/{id}`." }
+        token: { type: string, pattern: "^[0-9a-f]{64}$", description: Secret. Only its hash is stored. }
+        upload_url: { type: string, example: "https://explorer.example.com/api/v1/upload/3f9c…", description: "`{app_url}/api/v1/upload/{token}`: give this to the browser." }
+        expires_at: { $ref: "#/components/schemas/Timestamp" }
+
+    UploadTokenState:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [pending, uploading, used, failed, expired]
+          description: "`expired` = pending past `expires_at`. `failed` = refused, used up."
+        expires_at: { $ref: "#/components/schemas/Timestamp" }
+        file:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/File"
+          description: The stored file, once `used` (null if it has been deleted since).
+        error:
+          type: object
+          nullable: true
+          description: Why a `failed` token was refused.
+          properties:
+            code: { type: integer, example: 4151 }
+            message: { type: string }
+
+    LookupInput:
+      type: object
+      required: [uuids]
+      properties:
+        uuids:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { type: string }
+          description: File uuids. Malformed ones are left out of the response, not refused.
+          example: ["0196b1d3-5c2e-7a10-8f3b-6d9e2a4c7b15", "0196b1d3-60aa-7c21-9e0d-1b2c3d4e5f60"]
+
     File:
       type: object
       properties:
@@ -971,13 +1676,28 @@ components:
         size:
           type: integer
           description: Stored bytes (after conversion), which may differ from the uploaded size.
-        width: { type: integer, nullable: true, description: Raster images only. }
+        sha256:
+          type: string
+          nullable: true
+          pattern: "^[0-9a-f]{64}$"
+          description: >
+            SHA-256 of the stored bytes, lowercase hex. It equals the hash of the file you sent
+            only when nothing re-encoded it: verbatim images and every non-image file. A
+            stripped or converted image has the hash of what's stored, which is what `url`
+            serves. null on files uploaded before 1.5.0 until the instance backfills them.
+          example: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+        width: { type: integer, nullable: true, description: "Raster images only, as stored (before EXIF orientation). SVG: see `properties`." }
         height: { type: integer, nullable: true, description: Raster images only. }
         duration:
           type: integer
           nullable: true
           description: Seconds, audio/video only. null when the server can't read it.
-        no_convert: { type: boolean }
+        no_convert: { type: boolean, description: Always true on a verbatim file. }
+        verbatim:
+          type: boolean
+          description: >
+            Stored byte for byte as sent (the upload's flag, else the key's default). Non-image
+            files are stored as sent either way.
         url:
           type: string
           description: >
@@ -987,16 +1707,109 @@ components:
             local driver it also carries `?disposition=inline|attachment&filename=<name>`.
             Use it exactly as returned: don't build or parse it.
           example: "https://files.example.com/0196b1d2-7f3e-7c4a-9b1e-2f6a8d4c1e90/Xk3pQ9vT2mLr8sWn4bYc7.webp"
+        properties: { $ref: "#/components/schemas/FileProperties" }
+        processing: { $ref: "#/components/schemas/Processing" }
+        renditions:
+          type: object
+          nullable: true
+          additionalProperties: { $ref: "#/components/schemas/Rendition" }
+          description: >
+            By rendition name (the key's `rendition_profile`). null while
+            `processing.status` is `pending`; `{}` when there are none (not an image, no
+            processor, an empty profile, or SVG, which is never rasterized). A `failed` file
+            keeps the renditions that were made.
+          example:
+            thumb: { url: "https://files.example.com/0196b1d2-7f3e-7c4a-9b1e-2f6a8d4c1e90/Qm7vK2pX9sLr4tWn8bYc3.webp", width: 250, height: 300, mime_type: image/webp, size: 18342 }
+            preview: { url: "https://files.example.com/0196b1d2-7f3e-7c4a-9b1e-2f6a8d4c1e90/Zp4nR8tY2wQk6vMs1cXa9.webp", width: 1000, height: 1200, mime_type: image/webp, size: 201877 }
         thumbnail_url:
           type: string
           nullable: true
           description: >
-            Square crop-to-fill thumbnail (jpg, or png for an unconverted png). Only for raster
-            images, null for everything else including SVG.
+            The `thumb` rendition's URL: `renditions.thumb.url`. null while `pending`, and when
+            there's no `thumb`. With the default profile it's a square crop-to-fill, jpg (png for
+            a png), upright.
         tags:
           type: array
           items: { type: string }
         created_at: { $ref: "#/components/schemas/Timestamp" }
+
+    FileProperties:
+      type: object
+      description: |
+        What's known about the file. Every file has an object (`{}` for a document). Images
+        that went through the processor have every key below but `duration`; older files, and images the
+        processor couldn't read, have only the ones known from the upload (`width`, `height`).
+        A key that's absent was never computed. A key that's null was computed and isn't
+        known: a DPI the file doesn't declare is null, never a guessed 72.
+      properties:
+        width: { type: integer, description: "Pixels as stored, before EXIF orientation. Animated: one frame. SVG: the root's declared size in CSS px (96 per inch)." }
+        height: { type: integer }
+        duration: { type: integer, description: "Seconds, audio/video only." }
+        orientation: { type: integer, nullable: true, minimum: 1, maximum: 8, description: "EXIF orientation; null when the file has none" }
+        has_alpha_channel: { type: boolean, nullable: true }
+        is_opaque:
+          type: boolean
+          nullable: true
+          description: >
+            true with no alpha channel, or when every pixel is fully opaque (checked at full
+            resolution). null in the upload response of a big image with an alpha channel: it
+            needs the full run (`pending`).
+        dpi_x: { type: integer, nullable: true, description: "Declared resolution (pHYs, JFIF, EXIF); null when the file declares none" }
+        dpi_y: { type: integer, nullable: true }
+        bit_depth: { type: integer, nullable: true, description: "Bits per channel: 8 or 16" }
+        color_space: { type: string, nullable: true, example: srgb, description: "`srgb`, `gray`, `cmyk`, `lab`, …" }
+        has_icc_profile: { type: boolean, nullable: true }
+        animated: { type: boolean, nullable: true }
+        frame_count: { type: integer, nullable: true }
+      example: { width: 4500, height: 5400, orientation: null, has_alpha_channel: true, is_opaque: false, dpi_x: 300, dpi_y: 300, bit_depth: 8, color_space: srgb, has_icc_profile: true, animated: false, frame_count: 1 }
+
+    Processing:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [none, pending, ready, failed]
+          description: |
+            - `none`: no renditions are made for this file (not an image, BMP or SVG, an empty
+              profile, or no processor on the instance).
+            - `pending`: queued or running. Poll until it changes.
+            - `ready`: every rendition in the profile was made.
+            - `failed`: see `error`. The original is stored and served as usual.
+        error:
+          type: string
+          nullable: true
+          description: >
+            Why processing failed, for a human. Also set while `pending` when a run failed and
+            a retry is coming (3 runs in all by default). A `failed` file can be retried with
+            `POST /file/{uuid}/renditions`.
+
+    Rendition:
+      type: object
+      properties:
+        url:
+          type: string
+          description: >
+            Public, direct-from-storage, like `url`, under a token of its own. Regenerating the
+            renditions gives new URLs, and the old ones stop working.
+        width: { type: integer, nullable: true, description: "Measured. null only on thumbnails from before 1.5.0, until regenerated." }
+        height: { type: integer, nullable: true }
+        mime_type: { type: string, example: image/webp }
+        size: { type: integer, nullable: true, description: "Bytes. Renditions don't count toward the key's usage." }
+
+    RenditionSpec:
+      type: object
+      description: >
+        One rendition of a key's profile. Renditions are upright (EXIF orientation applied),
+        converted to sRGB, carry no metadata (no EXIF, GPS, XMP or ICC: they're public), and are
+        never upscaled. Animated images use their first frame.
+      properties:
+        name: { type: string, pattern: "^[a-z0-9_-]{1,32}$", description: "Unique, not only digits. `thumb` is the one `thumbnail_url` points at." }
+        width: { type: integer, minimum: 1, maximum: 2048 }
+        height: { type: integer, minimum: 1, maximum: 2048 }
+        fit: { type: string, enum: [contain, cover], description: "`contain` fits inside the box and keeps the aspect ratio; `cover` fills it, center-cropped" }
+        format: { type: string, enum: [webp, png, jpg, legacy], description: "`legacy`: png for a png original, jpg otherwise. webp and png keep transparency" }
+        quality: { type: integer, minimum: 1, maximum: 100, example: 85 }
+        background: { type: string, pattern: "^#[0-9a-f]{6}$", description: "What jpg flattens transparency onto (jpg and legacy only)", example: "#ffffff" }
 
     ShareCreate:
       type: object
@@ -1034,8 +1847,9 @@ components:
     SharedFile:
       type: object
       description: >
-        A strict subset of File: no `folder_uuid`, `no_convert` or `tags`. `url` is the same
-        direct-from-storage link the owner gets.
+        A strict subset of File: no `folder_uuid`, `no_convert`, `verbatim`, `sha256`, `tags`,
+        `properties`, `processing` or `renditions`: a share shows the thumbnail only, through
+        `thumbnail_url`. `url` is the same direct-from-storage link the owner gets.
       properties:
         uuid: { type: string, format: uuid }
         name: { type: string }

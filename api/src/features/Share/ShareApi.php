@@ -3,6 +3,7 @@
 namespace MagratheaExplorer\Share;
 
 use Magrathea\Config;
+use MagratheaExplorer\ApiTime;
 use MagratheaExplorer\ErrorCodes;
 use MagratheaExplorer\ExplorerApiControl;
 use MagratheaExplorer\File\FileControl;
@@ -36,7 +37,9 @@ class ShareApi extends ExplorerApiControl {
 	 */
 	public function GetAll(): array {
 		$key = $this->GetRequestKey();
-		$conditions = ["`key_id` = ".(int)$key->id];
+		// a folder pending a recursive delete is gone, and so are its shares (deleted with it)
+		$conditions = ["`key_id` = ".(int)$key->id,
+			"(`folder_id` IS NULL OR `folder_id` NOT IN (SELECT `id` FROM `folders` WHERE `deleting_at` IS NOT NULL))"];
 
 		if(!empty($_GET["file_uuid"])) {
 			$file = FileControl::GetForKeyByUuid($key, (string)$_GET["file_uuid"]);
@@ -78,8 +81,8 @@ class ShareApi extends ExplorerApiControl {
 			"file_uuid" => $type === "file" ? ($share->GetFile()?->uuid) : null,
 			"folder_uuid" => $type === "folder" ? ($share->GetFolder()?->uuid) : null,
 			"views" => (int)$share->views,
-			"last_viewed_at" => $share->last_viewed_at,
-			"created_at" => $share->created_at,
+			"last_viewed_at" => ApiTime::Utc($share->last_viewed_at),
+			"created_at" => ApiTime::Utc($share->created_at),
 		];
 	}
 

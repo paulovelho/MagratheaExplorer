@@ -20,6 +20,23 @@ interface StorageAdapter {
 	public function put(string $path, string $localTmpFile, array $meta): void;
 
 	/**
+	 * Copies the object at $path into $localTmpFile (created or overwritten), streamed in
+	 * chunks: never loaded into PHP memory, whatever its size. On failure nothing is left at
+	 * $localTmpFile, so a caller can't hash or process a partial copy.
+	 * @throws StorageException missing object, unreadable backend, short read, unwritable target
+	 */
+	public function fetch(string $path, string $localTmpFile): void;
+
+	/**
+	 * Copies the object at $from to $to (created or overwritten), keeping its Content-Type,
+	 * Content-Disposition and Cache-Control. On the server where the backend can (S3:
+	 * CopyObject, one request, up to 5 GB): the bytes don't pass through PHP. $from is left as it
+	 * is. Used by URL rotation (FileRotation).
+	 * @throws StorageException missing source, backend error
+	 */
+	public function copy(string $from, string $to): void;
+
+	/**
 	 * @throws StorageException
 	 */
 	public function delete(string $path): void;

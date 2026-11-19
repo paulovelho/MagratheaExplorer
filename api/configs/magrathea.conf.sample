@@ -11,6 +11,61 @@
 	timezone = "America/Sao_Paulo"
 	app_url = "http://explorer.magrathea.localhost.com:8080"
 	jwt_key = ""
+	; Uploads (1.5.0). All optional: absent = the default shown.
+	; Images an upload doesn't flag `verbatim`: false = strip metadata and re-encode (webp unless
+	; no_convert); true = store the bytes as sent. A key's own setting (admin) overrides this.
+	verbatim_default = "false"
+	; Non-verbatim images above either limit are refused with 4131 (413): stripping and
+	; re-encoding hold the whole image in PHP memory. Bytes accept "25M"; pixels are width x height.
+	convert_max_bytes = "25M"
+	convert_max_pixels = "40000000"
+	; The instance's scratch folder: cron.php's locks, the files it fetches back from storage,
+	; the processor's job folders and source_url downloads.
+	; Writable by the user cron runs as. Absent = api/tmp.
+	; processing_tmp_path = "/var/www/explorer/api/tmp"
+	; Image processor (1.5.0), see docs/deploy.md "Image processor". No processor_command = none.
+	; An argv in JSON, single-quoted, absolute paths. Explorer runs it as is, never through a shell.
+	; Any admin login can edit this file (Setup > Configuration File), so an admin account can run
+	; commands as the web user: only give admin accounts to people you'd give SSH to.
+	; processor_command = '["/home/u/explorer-venv/bin/python","/var/www/explorer/api/processor/vips/processor.py"]'
+	; Killed after processor_timeout_s. processor_memory_mb is its memory cap: what it needs grows
+	; with the image's width (a 200 MP square ~210 MB). Images above max_pixels (width x height)
+	; aren't decoded. Change max_pixels and processor_memory_mb together, then run
+	; api/processor/run-fixtures.php.
+	processor_timeout_s = "120"
+	processor_memory_mb = "384"
+	max_pixels = "200000000"
+	; Renditions are made during the upload for images up to inline_max_bytes and inline_max_pixels
+	; (the response has them); bigger ones, and bulk imports, wait for `cron.php --process`.
+	inline_max_bytes = "16M"
+	inline_max_pixels = "40000000"
+	; cron.php --process, per run: at most cron_process_max_files jobs, and none started after
+	; cron_process_max_s seconds (keep it under the cron interval). A run that fails is retried up
+	; to processing_max_attempts times in all.
+	cron_process_max_files = "20"
+	cron_process_max_s = "50"
+	processing_max_attempts = "3"
+	; Key provisioning (1.5.0): failed POST /provision/keys authentications are limited per client
+	; IP (10 per 15 minutes). Behind a proxy (Cloudflare), REMOTE_ADDR is the proxy's: name the
+	; header holding the client's IP. Only when every request comes through that proxy: anyone who
+	; reaches the server directly can send that header. Absent = REMOTE_ADDR.
+	; client_ip_header = "CF-Connecting-IP"
+	; Idempotency-Key (1.5.0): hours a POST /files or POST /provision/keys retry with the same key
+	; gets the first request's result. 24 at least (the floor clients rely on). Absent = 24.
+	; idempotency_retention_h = "24"
+	; Uploads from a URL (1.5.0): POST /files with `source_url` makes the server download the file.
+	; Off by default: it lets any key holder make the server open outbound HTTPS connections (to
+	; public addresses only, see docs/deploy.md "Uploads from a URL"). Needs ext-curl.
+	; source_url_enabled = "false"
+	; The whole download, redirects included, in seconds. Keep it under 100 behind Cloudflare.
+	; source_url_timeout_s = "90"
+	; Ports a source_url may use besides 443, comma-separated. Absent = 443 only.
+	; source_url_ports = "8443"
+	; Recursive folder delete (1.5.0): DELETE /folder/:uuid?recursive=1 deletes a subtree of at
+	; most this many files in the request; a bigger one is left to cron.php --process, which spends
+	; at most folder_delete_max_s seconds a run on it. Absent = the values shown.
+	; folder_delete_inline_files = "200"
+	; folder_delete_max_s = "15"
 
 [production]
 	db_host = "127.0.0.1"
@@ -22,3 +77,58 @@
 	timezone = "America/Sao_Paulo"
 	app_url = "https://explorer.platypusweb.com"
 	jwt_key = ""
+	; Uploads (1.5.0). All optional: absent = the default shown.
+	; Images an upload doesn't flag `verbatim`: false = strip metadata and re-encode (webp unless
+	; no_convert); true = store the bytes as sent. A key's own setting (admin) overrides this.
+	verbatim_default = "false"
+	; Non-verbatim images above either limit are refused with 4131 (413): stripping and
+	; re-encoding hold the whole image in PHP memory. Bytes accept "25M"; pixels are width x height.
+	convert_max_bytes = "25M"
+	convert_max_pixels = "40000000"
+	; The instance's scratch folder: cron.php's locks, the files it fetches back from storage,
+	; the processor's job folders and source_url downloads.
+	; Writable by the user cron runs as. Absent = api/tmp.
+	; processing_tmp_path = "/var/www/explorer/api/tmp"
+	; Image processor (1.5.0), see docs/deploy.md "Image processor". No processor_command = none.
+	; An argv in JSON, single-quoted, absolute paths. Explorer runs it as is, never through a shell.
+	; Any admin login can edit this file (Setup > Configuration File), so an admin account can run
+	; commands as the web user: only give admin accounts to people you'd give SSH to.
+	; processor_command = '["/home/u/explorer-venv/bin/python","/var/www/explorer/api/processor/vips/processor.py"]'
+	; Killed after processor_timeout_s. processor_memory_mb is its memory cap: what it needs grows
+	; with the image's width (a 200 MP square ~210 MB). Images above max_pixels (width x height)
+	; aren't decoded. Change max_pixels and processor_memory_mb together, then run
+	; api/processor/run-fixtures.php.
+	processor_timeout_s = "120"
+	processor_memory_mb = "384"
+	max_pixels = "200000000"
+	; Renditions are made during the upload for images up to inline_max_bytes and inline_max_pixels
+	; (the response has them); bigger ones, and bulk imports, wait for `cron.php --process`.
+	inline_max_bytes = "16M"
+	inline_max_pixels = "40000000"
+	; cron.php --process, per run: at most cron_process_max_files jobs, and none started after
+	; cron_process_max_s seconds (keep it under the cron interval). A run that fails is retried up
+	; to processing_max_attempts times in all.
+	cron_process_max_files = "20"
+	cron_process_max_s = "50"
+	processing_max_attempts = "3"
+	; Key provisioning (1.5.0): failed POST /provision/keys authentications are limited per client
+	; IP (10 per 15 minutes). Behind a proxy (Cloudflare), REMOTE_ADDR is the proxy's: name the
+	; header holding the client's IP. Only when every request comes through that proxy: anyone who
+	; reaches the server directly can send that header. Absent = REMOTE_ADDR.
+	; client_ip_header = "CF-Connecting-IP"
+	; Idempotency-Key (1.5.0): hours a POST /files or POST /provision/keys retry with the same key
+	; gets the first request's result. 24 at least (the floor clients rely on). Absent = 24.
+	; idempotency_retention_h = "24"
+	; Uploads from a URL (1.5.0): POST /files with `source_url` makes the server download the file.
+	; Off by default: it lets any key holder make the server open outbound HTTPS connections (to
+	; public addresses only, see docs/deploy.md "Uploads from a URL"). Needs ext-curl.
+	; source_url_enabled = "false"
+	; The whole download, redirects included, in seconds. Keep it under 100 behind Cloudflare.
+	; source_url_timeout_s = "90"
+	; Ports a source_url may use besides 443, comma-separated. Absent = 443 only.
+	; source_url_ports = "8443"
+	; Recursive folder delete (1.5.0): DELETE /folder/:uuid?recursive=1 deletes a subtree of at
+	; most this many files in the request; a bigger one is left to cron.php --process, which spends
+	; at most folder_delete_max_s seconds a run on it. Absent = the values shown.
+	; folder_delete_inline_files = "200"
+	; folder_delete_max_s = "15"

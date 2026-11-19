@@ -14,7 +14,6 @@ class File extends MagratheaModel {
 		// internal-only.
 		"uuid" => "uuid",
 		"token" => "string",
-		"thumbnail_token" => "string",
 		"key_id" => "int",
 		"folder_id" => "int",
 		"name" => "string",
@@ -23,12 +22,24 @@ class File extends MagratheaModel {
 		"mime_type" => "string",
 		"file_type" => "string",
 		"size" => "int",
+		// lowercase hex of the stored bytes: the sender's hash only when verbatim (or not an
+		// image). null on files from before 1.5.0 until `cron.php --backfill-sha256`
+		"sha256" => "string",
 		"width" => "int",
 		"height" => "int",
 		"duration" => "int",
+		// JSON: what the processor read (ProcessorRunner::PROPERTY_TYPES, null = unknown).
+		// null = never processed. Read it through FileResponse::Properties().
+		"properties" => "text",
+		// none | pending | ready | failed (see FileProcessing)
+		"processing_status" => "string",
+		"processing_error" => "string",
 		"no_convert" => "boolean",
-		// storage path of the thumbnail object; null when there is no thumbnail
-		"thumbnail_path" => "string",
+		// stored exactly as sent (no strip, no re-encode). Records the resolved request
+		// (flag, else the key's default): non-image files are stored as sent either way.
+		"verbatim" => "boolean",
+		// `thumbnail_token`/`thumbnail_path` are still in the table (rollback to 1.4.x), but no
+		// longer written or read: the thumbnail is the `thumb` row in file_renditions.
 	];
 	protected $relations = [
 		"properties" => ["Key" => null, "Folder" => null, "Tags" => null],
@@ -36,9 +47,9 @@ class File extends MagratheaModel {
 		"lazyload" => ["Key" => true, "Folder" => true, "Tags" => true],
 	];
 
-	public $id, $uuid, $token, $thumbnail_token, $key_id, $folder_id, $name, $storage_path;
-	public $extension, $mime_type, $file_type, $size, $width, $height, $duration, $no_convert;
-	public $thumbnail_path;
+	public $id, $uuid, $token, $key_id, $folder_id, $name, $storage_path;
+	public $extension, $mime_type, $file_type, $size, $sha256, $width, $height, $duration;
+	public $properties, $processing_status, $processing_error, $no_convert, $verbatim;
 
 	public function GetKey(): \MagratheaExplorer\Key\Key {
 		return $this->relations["properties"]["Key"] ??= new \MagratheaExplorer\Key\Key($this->key_id);
@@ -53,8 +64,11 @@ class File extends MagratheaModel {
 		return $this->relations["properties"]["Tags"] ??= FileTagControl::GetTagsForFile($this->id);
 	}
 
-	public function HasThumbnail(): bool {
-		return !empty($this->thumbnail_token);
+	/** The processor's properties as stored, or null when there are none. */
+	public function StoredProperties(): ?array {
+		if($this->properties === null || $this->properties === "") return null;
+		$decoded = json_decode((string)$this->properties, true);
+		return is_array($decoded) ? $decoded : null;
 	}
 
 	/**

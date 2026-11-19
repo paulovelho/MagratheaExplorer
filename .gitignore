@@ -34,3 +34,4 @@ api/composer.phar
 
 # processor job dirs, dreamhost-check scratch (1.5.0)
 api/tmp/
+__pycache__/
